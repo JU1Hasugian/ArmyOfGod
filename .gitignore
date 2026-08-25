@@ -9,6 +9,7 @@ workspaces/
 codex-home/
 coverage/
 *.log
+*:Zone.Identifier
 *.tsbuildinfo
 .DS_Store
 deploy/volcengine/.terraform/

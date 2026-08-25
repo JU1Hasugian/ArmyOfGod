@@ -19,9 +19,52 @@ const updateAgentBody = createAgentBody.partial().refine(
   (value) => Object.keys(value).length > 0,
   "At least one field is required",
 );
+/**
+ * Note what this schema does NOT accept: a capability scope. A scope is always
+ * read server-side from the governing contract, so a caller cannot smuggle one
+ * in. Zod strips unknown keys, so an inline `scope` is silently ignored — there
+ * is a negative test for exactly this.
+ */
 const messageBody = z.object({
   content: z.string().trim().min(1).max(50_000),
+  forceAdHoc: z.boolean().optional(),
 });
+
+const capabilityScopeBody = z.object({
+  paths: z
+    .array(
+      z.object({
+        path: z.string().trim().max(200),
+        mode: z.enum(["ro", "rw"]),
+      }),
+    )
+    .max(50),
+  domains: z.array(z.string().trim().max(253)).max(50),
+  secrets: z.array(z.string().trim().max(100)).max(50),
+});
+
+const approveBody = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  scope: capabilityScopeBody.optional(),
+});
+
+const reviseBody = z.object({ scope: capabilityScopeBody });
+
+/** A reviewer may reword a proposed rule before it becomes part of the brief. */
+const applyRefinementBody = z.object({
+  rule: z.string().trim().min(1).max(300).optional(),
+});
+
+/**
+ * Mock identity, as the brief permits. A header plus a UI switcher is enough to
+ * demonstrate ownership and attribution; building real login would spend the
+ * hackathon on the one part that is a solved problem elsewhere.
+ */
+function principal(request: { headers: Record<string, unknown> }, fallback: string): string {
+  const header = request.headers["x-codify-user"];
+  const value = Array.isArray(header) ? header[0] : header;
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, 64) : fallback;
+}
 
 export async function createApp(
   config: AppConfig,
@@ -119,7 +162,10 @@ export async function createApp(
   app.post("/api/agents/:id/messages", async (request, reply) => {
     const { id } = agentIdParams.parse(request.params);
     const body = messageBody.parse(request.body);
-    const result = await service.sendMessage(id, body.content);
+    const result = await service.sendMessage(id, body.content, {
+      userId: principal(request, config.codifyDefaultUser),
+      ...(body.forceAdHoc !== undefined ? { forceAdHoc: body.forceAdHoc } : {}),
+    });
     return reply.code(202).send(result);
   });
 
@@ -128,20 +174,109 @@ export async function createApp(
     return { run: service.getRun(id) };
   });
 
-  if (config.nodeEnv === "production") {
-    const webRoot = fileURLToPath(new URL("../../web/dist", import.meta.url));
-    await app.register(fastifyStatic, {
-      root: webRoot,
-      prefix: "/",
-    });
-    app.setNotFoundHandler((request, reply) => {
-      if (request.url.startsWith("/api/")) {
-        return reply.code(404).send({ error: "API route not found" });
-      }
-      return reply.sendFile("index.html");
-    });
-  }
+  // ------------------------------------------------------------------ Codify
 
+  app.get("/api/codify/candidates", async () => ({
+    candidates: service.codify.listCandidates(),
+  }));
+
+  app.post("/api/codify/candidates/refresh", async () => ({
+    candidates: await service.codify.refreshCandidates(),
+  }));
+
+  app.get("/api/codify/candidates/:id", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    return { candidate: service.codify.getCandidate(id) };
+  });
+
+  app.post("/api/codify/candidates/:id/approve", async (request, reply) => {
+    const { id } = agentIdParams.parse(request.params);
+    const body = approveBody.parse(request.body ?? {});
+    const result = await service.approveCandidate(id, {
+      ...(body.name !== undefined ? { name: body.name } : {}),
+      ...(body.scope !== undefined ? { scope: body.scope } : {}),
+      userId: principal(request, config.codifyDefaultUser),
+    });
+    return reply.code(201).send(result);
+  });
+
+  app.post("/api/codify/candidates/:id/reject", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    return { candidate: await service.codify.rejectCandidate(id) };
+  });
+
+  app.get("/api/codify/contracts", async () => ({
+    contracts: service.codify.listContracts(),
+  }));
+
+  app.get("/api/codify/contracts/:id", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    return { contract: service.codify.getContract(id) };
+  });
+
+  /** Narrowing is revocation and is always allowed; widening needs a denial. */
+  app.patch("/api/codify/contracts/:id", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    const body = reviseBody.parse(request.body);
+    return {
+      contract: await service.codify.reviseContract(
+        id,
+        body.scope,
+        principal(request, config.codifyDefaultUser),
+      ),
+    };
+  });
+
+  app.get("/api/codify/contracts/:id/escalation", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    return service.codify.proposeEscalation(id);
+  });
+
+  /** Everything Codify recorded about one Run, for the evidence view. */
+  app.get("/api/codify/runs/:id", async (request) => {
+    const { id } = runIdParams.parse(request.params);
+    const run = service.getRun(id);
+    return {
+      run,
+      decision: service.codify.getRouteDecision(id) ?? null,
+      denials: service.codify.listDenials(id),
+    };
+  });
+
+  app.get("/api/codify/denials", async () => ({
+    denials: service.codify.listDenials(),
+  }));
+
+  // ⑦ Refinements: repeated corrections becoming standing rules.
+
+  app.get("/api/codify/refinements", async () => ({
+    refinements: service.codify.listRefinements(),
+  }));
+
+  app.post("/api/codify/refinements/refresh", async () => ({
+    refinements: await service.codify.refreshRefinements(),
+  }));
+
+  app.post("/api/codify/refinements/:id/apply", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    const body = applyRefinementBody.parse(request.body ?? {});
+    return service.applyRefinement(
+      id,
+      principal(request, config.codifyDefaultUser),
+      body.rule,
+    );
+  });
+
+  app.post("/api/codify/refinements/:id/reject", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    return { refinement: await service.codify.rejectRefinement(id) };
+  });
+
+  // Registered before the static/not-found block below: `setNotFoundHandler`
+  // forks the root context, and a `setErrorHandler` installed after it never
+  // applies to routes already registered. With the two in the other order,
+  // production returned Fastify's default error shape and turned every
+  // validation failure into a 500.
   app.setErrorHandler((error, request, reply) => {
     const appError = error instanceof Error ? error : new Error(String(error));
     const validationError = error instanceof z.ZodError;
@@ -165,6 +300,20 @@ export async function createApp(
       ...(validationError ? { details: error.issues } : {}),
     });
   });
+
+  if (config.nodeEnv === "production") {
+    const webRoot = fileURLToPath(new URL("../../web/dist", import.meta.url));
+    await app.register(fastifyStatic, {
+      root: webRoot,
+      prefix: "/",
+    });
+    app.setNotFoundHandler((request, reply) => {
+      if (request.url.startsWith("/api/")) {
+        return reply.code(404).send({ error: "API route not found" });
+      }
+      return reply.sendFile("index.html");
+    });
+  }
 
   return app;
 }

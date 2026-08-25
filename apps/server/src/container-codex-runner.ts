@@ -1,10 +1,16 @@
 import { execFile, spawn, type ChildProcess } from "node:child_process";
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import { promisify } from "node:util";
-import type { AppConfig } from "./config.js";
+import { agentCodexHome, isCodifyActive, writeCodexConfig, type AppConfig } from "./config.js";
 import { buildCodexArgs, parseCodexEventLine } from "./codex-runner.js";
+import { BrokerSession } from "./codify/broker-session.js";
+import { diffWorkspace, snapshotWorkspace } from "./codify/workspace-diff.js";
+import type { BrokerEvent, CapabilityScope } from "./codify/types.js";
 import { RunCancelledError } from "./errors.js";
 import type {
   AgentRunner,
+  RunEvidence,
   RunUsage,
   RunnerRequest,
   RunnerResult,
@@ -35,12 +41,74 @@ export function containerName(agentId: string, instanceId = "default"): string {
   return "launchpad-" + safeInstance + "-" + safeAgent;
 }
 
+/**
+ * Everything the container launch needs from a live BrokerSession in order to
+ * enforce a scope. Kept as plain data so `buildContainerRunArgs` stays a pure
+ * function that can be unit-tested without an engine.
+ */
+export interface ScopedLaunch {
+  /** The run's `--internal` network. It has no route off-host. */
+  networkName: string;
+  /** Non-secret proxy variables, safe to appear inline in argv. */
+  proxyEnvironment: Record<string, string>;
+  scope: CapabilityScope;
+  /** Per-Agent Codex home, so sessions are not shared between Agents. */
+  codexHome: string;
+  /** Managed secrets granted to this run. Names only — values never hit argv. */
+  secretNames: string[];
+}
+
+/** True when the scope leaves the whole workspace writable, i.e. is not narrowed. */
+export function scopeCoversWholeWorkspace(scope: CapabilityScope): boolean {
+  return scope.paths.some((entry) => entry.mode === "rw" && entry.path === ".");
+}
+
+/** Workspace-relative directories a scope makes writable, root excluded. */
+export function writableScopePaths(scope: CapabilityScope): string[] {
+  return scope.paths
+    .filter((entry) => entry.mode === "rw" && entry.path !== "." && entry.path !== "")
+    .map((entry) => entry.path);
+}
+
+/**
+ * Filesystem scope is enforced by how the workspace is mounted, not by asking
+ * Codex to behave: the workspace root goes in read-only and each writable
+ * subpath is layered back over it read-write. A write anywhere else fails with
+ * EROFS in the kernel.
+ *
+ * This is deliberately the layer below Codex's own sandbox. `CODEX_SANDBOX_MODE`
+ * falls back to `danger-full-access` on kernels without Landlock — the Starter
+ * Kit says so itself — and on those kernels these mounts are the only per-Agent
+ * filesystem boundary there is.
+ */
+function workspaceMounts(request: RunnerRequest, launch: ScopedLaunch): string[] {
+  if (scopeCoversWholeWorkspace(launch.scope)) {
+    return ["--mount", "type=bind,src=" + request.workspacePath + ",dst=/workspace"];
+  }
+  const mounts = [
+    "--mount",
+    "type=bind,src=" + request.workspacePath + ",dst=/workspace,readonly",
+  ];
+  for (const relativePath of writableScopePaths(launch.scope)) {
+    mounts.push(
+      "--mount",
+      "type=bind,src=" +
+        path.join(request.workspacePath, relativePath) +
+        ",dst=" +
+        path.posix.join("/workspace", relativePath),
+    );
+  }
+  return mounts;
+}
+
 export function buildContainerRunArgs(
   request: RunnerRequest,
   config: AppConfig,
+  launch?: ScopedLaunch,
 ): string[] {
   const name = containerName(request.agentId, config.runtimeInstanceId);
   const engineName = config.containerEngine.split(/[\\/]/).at(-1)?.toLowerCase();
+  const codexHome = launch?.codexHome ?? config.codexHome;
   return [
     "run",
     "--rm",
@@ -55,7 +123,9 @@ export function buildContainerRunArgs(
     "io.codejam.instance-id=" + config.runtimeInstanceId,
     ...(engineName === "podman" ? ["--userns", "keep-id"] : []),
     "--network",
-    "bridge",
+    // Scoped runs attach only to their own `--internal` network, which has no
+    // route out. Unscoped runs keep the baseline bridge.
+    launch ? launch.networkName : "bridge",
     "--security-opt",
     "no-new-privileges",
     "--cap-drop",
@@ -68,18 +138,26 @@ export function buildContainerRunArgs(
     String(config.containerPidsLimit),
     "--user",
     config.containerUser,
+    // Name-only form: the value comes from the spawned process environment, so
+    // no credential is ever visible in the engine's argv.
     "--env",
     "ARK_API_KEY",
+    ...(launch?.secretNames ?? []).flatMap((secret) => ["--env", secret]),
+    ...Object.entries(launch?.proxyEnvironment ?? {}).flatMap(([key, value]) => [
+      "--env",
+      key + "=" + value,
+    ]),
     "--env",
     "CODEX_HOME=/codex-home",
     "--env",
     "HOME=/tmp",
     "--env",
     "NO_COLOR=1",
+    ...(launch
+      ? workspaceMounts(request, launch)
+      : ["--mount", "type=bind,src=" + request.workspacePath + ",dst=/workspace"]),
     "--mount",
-    "type=bind,src=" + request.workspacePath + ",dst=/workspace",
-    "--mount",
-    "type=bind,src=" + config.codexHome + ",dst=/codex-home",
+    "type=bind,src=" + codexHome + ",dst=/codex-home",
     "--workdir",
     "/workspace",
     config.containerRuntimeImage,
@@ -90,6 +168,7 @@ export function buildContainerRunArgs(
 
 export class ContainerCodexRunner implements AgentRunner {
   private readonly active = new Map<string, ActiveContainer>();
+  private readonly sessions = new Map<string, BrokerSession>();
 
   constructor(private readonly config: AppConfig) {}
 
@@ -141,13 +220,105 @@ export class ContainerCodexRunner implements AgentRunner {
     if (this.active.has(request.agentId)) {
       throw new Error("Agent already has an active Runtime container");
     }
+    const binding = isCodifyActive(this.config) ? request.codify : undefined;
+    if (!binding) return this.execute(request);
 
+    // Each Agent gets its own Codex home, so one Agent cannot read another's
+    // sessions or rewrite the shared provider configuration.
+    const codexHome = agentCodexHome(this.config, request.agentId);
+    await mkdir(codexHome, { recursive: true });
+    await writeCodexConfig(this.config, codexHome);
+
+    // Bind mounts fail on a missing source, and the engine would otherwise
+    // create them as root. Materialise writable scope paths as the app user.
+    for (const relativePath of writableScopePaths(binding.scope)) {
+      await mkdir(path.join(request.workspacePath, relativePath), { recursive: true });
+    }
+
+    const before = await snapshotWorkspace(request.workspacePath);
+    const secretNames = binding.scope.secrets.filter(
+      (name) => this.config.codifyManagedSecrets[name] !== undefined,
+    );
+    const secretValues: Record<string, string> = {};
+    for (const name of secretNames) {
+      secretValues[name] = this.config.codifyManagedSecrets[name] as string;
+    }
+
+    // Fail closed: if the broker cannot start, this throws and the run fails.
+    // There is deliberately no path here that falls back to unbrokered network.
+    const session = await BrokerSession.start({
+      engine: this.config.containerEngine,
+      runId: binding.runId,
+      instanceId: this.config.runtimeInstanceId,
+      mode: binding.mode,
+      scope: binding.scope,
+      image: this.config.codifyBrokerImage,
+      brokerScriptPath: this.config.codifyBrokerScript,
+      eventRoot: this.config.codifyEventRoot,
+      arkUpstream: this.config.arkBaseUrl,
+      arkKey: this.config.arkApiKey,
+      containerUser: this.config.containerUser,
+      contractId: binding.contractId,
+      contractVersion: binding.contractVersion,
+      environment: this.childEnvironment(),
+    });
+    this.sessions.set(request.agentId, session);
+
+    let evidencePublished = false;
+    const publishEvidence = async (): Promise<void> => {
+      if (evidencePublished || !request.onEvidence) return;
+      evidencePublished = true;
+      let brokerEvents: BrokerEvent[] = [];
+      let pathsWritten: string[] = [];
+      let pathsRead: string[] = [];
+      try {
+        brokerEvents = await session.readEvents();
+        const delta = diffWorkspace(before, await snapshotWorkspace(request.workspacePath));
+        pathsWritten = delta.pathsWritten;
+        pathsRead = delta.pathsRead;
+      } catch {
+        /* Evidence collection must never mask the run's own outcome. */
+      }
+      request.onEvidence({
+        brokerEvents,
+        pathsWritten,
+        pathsRead,
+        secretsGranted: secretNames,
+      });
+    };
+
+    try {
+      return await this.execute(
+        request,
+        {
+          networkName: session.networkName,
+          proxyEnvironment: session.proxyEnvironment(),
+          scope: binding.scope,
+          codexHome,
+          secretNames,
+        },
+        // The container receives a per-run placeholder, never the real Ark key.
+        { ARK_API_KEY: session.runToken, ...secretValues },
+      );
+    } finally {
+      await publishEvidence();
+      this.sessions.delete(request.agentId);
+      await session.stop();
+      await session.cleanupEvidence();
+    }
+  }
+
+  private async execute(
+    request: RunnerRequest,
+    launch?: ScopedLaunch,
+    extraEnvironment: Record<string, string> = {},
+  ): Promise<RunnerResult> {
     const child = spawn(
       this.config.containerEngine,
-      buildContainerRunArgs(request, this.config),
+      buildContainerRunArgs(request, this.config, launch),
       {
         cwd: request.workspacePath,
-        env: this.childEnvironment(),
+        env: this.childEnvironment(extraEnvironment),
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
@@ -235,7 +406,9 @@ export class ContainerCodexRunner implements AgentRunner {
     }
   }
 
-  private childEnvironment(): NodeJS.ProcessEnv {
+  private childEnvironment(
+    overrides: Record<string, string> = {},
+  ): NodeJS.ProcessEnv {
     const environment: NodeJS.ProcessEnv = {
       ARK_API_KEY: this.config.arkApiKey,
       NO_COLOR: "1",
@@ -250,6 +423,6 @@ export class ContainerCodexRunner implements AgentRunner {
     ] as const) {
       if (process.env[name] !== undefined) environment[name] = process.env[name];
     }
-    return environment;
+    return { ...environment, ...overrides };
   }
 }

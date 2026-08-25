@@ -35,6 +35,9 @@ RUN if [ -n "$DEBIAN_SECURITY_MIRROR" ]; then \
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/apps/server/package.json ./apps/server/package.json
 COPY --from=build /app/apps/server/dist ./apps/server/dist
+# The Codify broker is plain JS, bind-mounted into its own container rather than
+# imported, so it ships alongside the build output instead of inside it.
+COPY --from=build /app/apps/server/broker ./apps/server/broker
 COPY --from=build /app/apps/web/dist ./apps/web/dist
 
 RUN mkdir -p /app/data /app/workspaces /app/codex-home \

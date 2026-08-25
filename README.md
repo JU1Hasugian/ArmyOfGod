@@ -8,9 +8,37 @@ Run it locally with Docker, Colima, or rootless Podman, or deploy it to
 Volcengine ECS.
 
 > [!WARNING]
-> This is a single-user proof of concept. It intentionally has no identity,
-> tracing, audit, or hardened sandbox middleware. Do not use production data or
-> credentials. See [SECURITY.md](SECURITY.md).
+> This is a proof of concept. Do not use production data or credentials.
+> See [SECURITY.md](SECURITY.md).
+
+## Codify — the middleware in this repository
+
+This fork adds **Codify**: the platform notices when a task recurs, promotes it
+into a **specialist Agent**, and routes later requests to it.
+
+> Fifty people ask for "a slide deck for the mid-term meeting" in fifty
+> different wordings, and everyone gets a different answer. Codify clusters those
+> requests, drafts a brief from how the task has actually been done, creates an
+> Agent for it, and hands future requests to that Agent — so person 51 gets the
+> distilled version instead of starting from scratch.
+
+It keeps improving after promotion. When several different people give the
+specialist the same correction — *"use more colour in the headings"* — that stops
+being a preference and becomes a proposed rule. A human approves it, the contract
+is versioned, and the Agent's brief is rewritten so nobody has to ask again.
+
+The same observed behaviour also yields the task's **permissions**, so a
+specialist runs least-privilege without anyone writing a policy: its own
+`--internal` network with no route off-host, a broker container as the only way
+out, and the workspace mounted read-only except the paths the task actually
+writes to. The broker also holds the Ark key, so the Agent container never sees
+it.
+
+Start it with `npm run poc`, then open **Codify governance** in the sidebar. The
+review queue is seeded with observed runs, so there is something to approve
+immediately.
+
+**[Read the full design, demo script, tests, and limitations →](docs/CODIFY.md)**
 
 ## Screenshots
 
@@ -239,6 +267,7 @@ docker compose config
 
 ## Documentation
 
+- [Codify middleware design](docs/CODIFY.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Local POC](docs/LOCAL_POC.md)
 - [Deployment](docs/DEPLOYMENT.md)

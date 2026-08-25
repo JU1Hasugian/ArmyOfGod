@@ -7,7 +7,37 @@ const emptyDatabase = (): Database => ({
   agents: [],
   messages: [],
   runs: [],
+  promptObservations: [],
+  capabilityObservations: [],
+  candidates: [],
+  contracts: [],
+  routeDecisions: [],
+  denialEvents: [],
+  feedbackObservations: [],
+  refinementProposals: [],
 });
+
+/**
+ * Codify's collections were added after the baseline shipped, so a database
+ * written by an earlier build is missing them. Backfill on load rather than
+ * bumping the schema version: nothing existing changes shape, so an older
+ * store stays readable and a newer one degrades gracefully.
+ */
+function withCodifyCollections(parsed: Database): Database {
+  const empty = emptyDatabase();
+  return {
+    ...parsed,
+    promptObservations: parsed.promptObservations ?? empty.promptObservations,
+    capabilityObservations:
+      parsed.capabilityObservations ?? empty.capabilityObservations,
+    candidates: parsed.candidates ?? empty.candidates,
+    contracts: parsed.contracts ?? empty.contracts,
+    routeDecisions: parsed.routeDecisions ?? empty.routeDecisions,
+    denialEvents: parsed.denialEvents ?? empty.denialEvents,
+    feedbackObservations: parsed.feedbackObservations ?? empty.feedbackObservations,
+    refinementProposals: parsed.refinementProposals ?? empty.refinementProposals,
+  };
+}
 
 export class JsonStore {
   private data: Database = emptyDatabase();
@@ -23,7 +53,7 @@ export class JsonStore {
       if (parsed.version !== 1 || !Array.isArray(parsed.agents)) {
         throw new Error("Unsupported database format");
       }
-      this.data = parsed;
+      this.data = withCodifyCollections(parsed);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
         throw error;

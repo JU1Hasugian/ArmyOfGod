@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { z } from "zod";
+import { BROKER_ARK_BASE_URL } from "./codify/broker-session.js";
 
 const envSchema = z.object({
   HOST: z.string().default("0.0.0.0"),
@@ -44,10 +46,58 @@ const envSchema = z.object({
     .string()
     .url()
     .default("https://ark.cn-beijing.volces.com/api/v3"),
+  CODIFY_ENABLED: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  /** Image for the broker container. Defaults to the Runtime image, which has node. */
+  CODIFY_BROKER_IMAGE: z.string().optional(),
+  CODIFY_MATCH_THRESHOLD: z.coerce.number().min(0).max(1).default(0.65),
+  CODIFY_MIN_OCCURRENCES: z.coerce.number().int().min(1).default(5),
+  CODIFY_MIN_DISTINCT_USERS: z.coerce.number().int().min(1).default(3),
+  /**
+   * Distinct people who must give the same follow-up correction before it is
+   * proposed as a standing rule. Lower than the promotion floor: a correction
+   * is a much cheaper, more reversible change than minting a contract.
+   */
+  CODIFY_MIN_REFINEMENT_USERS: z.coerce.number().int().min(1).default(2),
+  /**
+   * Whether promotion and refinement may make a model call to draft a brief or
+   * a rule. Both callers fall back to a deterministic result when this is off,
+   * so turning it off degrades quality and never breaks the flow. Defaults off
+   * under test so the suite never reaches the network.
+   */
+  CODIFY_LLM_DRAFTING: z.enum(["true", "false"]).optional(),
+  /** Fallback principal when a request carries no x-codify-user header. */
+  CODIFY_DEFAULT_USER: z.string().trim().min(1).max(64).default("user-a"),
+  /** Seed the observed-run corpus on first boot so the queue is not empty. */
+  CODIFY_SEED_FIXTURES: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
 export type AppConfig = ReturnType<typeof loadConfig>;
+
+/**
+ * Credentials the platform holds on the Agent's behalf. A Runtime container
+ * receives one only when the governing contract's scope names it, and the value
+ * never leaves the control plane otherwise.
+ *
+ * Populated from `CODIFY_SECRET_<NAME>` environment variables, so
+ * `CODIFY_SECRET_GITHUB_TOKEN=abc` publishes a managed secret named
+ * `GITHUB_TOKEN`.
+ */
+function readManagedSecrets(environment: NodeJS.ProcessEnv): Record<string, string> {
+  const secrets: Record<string, string> = {};
+  for (const [key, value] of Object.entries(environment)) {
+    if (!key.startsWith("CODIFY_SECRET_") || !value) continue;
+    const name = key.slice("CODIFY_SECRET_".length);
+    if (name) secrets[name] = value;
+  }
+  return secrets;
+}
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
   const env = envSchema.parse(environment);
@@ -88,7 +138,49 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     arkModel: env.ARK_MODEL?.trim() ?? "",
     arkBaseUrl: env.ARK_BASE_URL.replace(/\/+$/, ""),
     nodeEnv: env.NODE_ENV,
+    codifyEnabled: env.CODIFY_ENABLED,
+    codifyBrokerImage: env.CODIFY_BROKER_IMAGE?.trim() || env.CONTAINER_RUNTIME_IMAGE,
+    codifyMatchThreshold: env.CODIFY_MATCH_THRESHOLD,
+    codifyMinOccurrences: env.CODIFY_MIN_OCCURRENCES,
+    codifyMinDistinctUsers: env.CODIFY_MIN_DISTINCT_USERS,
+    codifyMinRefinementUsers: env.CODIFY_MIN_REFINEMENT_USERS,
+    codifyDraftingEnabled:
+      env.CODIFY_LLM_DRAFTING === undefined
+        ? env.NODE_ENV !== "test"
+        : env.CODIFY_LLM_DRAFTING === "true",
+    codifyDefaultUser: env.CODIFY_DEFAULT_USER,
+    codifySeedFixtures: env.CODIFY_SEED_FIXTURES,
+    codifyManagedSecrets: readManagedSecrets(environment),
+    /**
+     * `dist/` and `src/` sit at the same depth under `apps/server`, so this
+     * resolves the same way whether the server runs from a build or from tsx.
+     */
+    codifyBrokerScript: fileURLToPath(
+      new URL("../broker/codify-broker.mjs", import.meta.url),
+    ),
+    codifyEventRoot: path.join(path.resolve(env.APP_DATA_DIR), "codify-events"),
   };
+}
+
+/**
+ * Per-Agent Codex home.
+ *
+ * The baseline bind-mounts one shared `CODEX_HOME` into every Runtime
+ * container, which makes it a cross-Agent channel: any Agent can read another's
+ * session state or rewrite the generated `config.toml`. Giving each Agent its
+ * own directory closes that without changing how sessions resume, since a
+ * thread only ever resumes inside the Agent that created it.
+ */
+export function agentCodexHome(config: AppConfig, agentId: string): string {
+  return path.join(config.codexHome, "agents", agentId);
+}
+
+/**
+ * Codify only enforces at the container boundary, so it is inert for the
+ * in-process runner used by `npm run dev` and the ECS profile.
+ */
+export function isCodifyActive(config: AppConfig): boolean {
+  return config.codifyEnabled && config.runtimeProvider === "container";
 }
 
 export function isArkConfigured(config: AppConfig): boolean {
@@ -100,8 +192,15 @@ export function isArkConfigured(config: AppConfig): boolean {
   );
 }
 
-export async function writeCodexConfig(config: AppConfig): Promise<void> {
-  await mkdir(config.codexHome, { recursive: true });
+export async function writeCodexConfig(
+  config: AppConfig,
+  codexHome: string = config.codexHome,
+): Promise<void> {
+  await mkdir(codexHome, { recursive: true });
+  // Under Codify the container never holds the real key: Codex talks plain HTTP
+  // to the broker inside the internal network, and the broker attaches the real
+  // credential on the way upstream over TLS.
+  const baseUrl = isCodifyActive(config) ? BROKER_ARK_BASE_URL : config.arkBaseUrl;
   const toml = [
     "# Generated by Volc Agent Launchpad. Edit environment variables, not this file.",
     "model = " + JSON.stringify(config.arkModel || "ep-not-configured"),
@@ -109,13 +208,13 @@ export async function writeCodexConfig(config: AppConfig): Promise<void> {
     "",
     "[model_providers.volcengine_ark]",
     'name = "Volcengine Ark"',
-    "base_url = " + JSON.stringify(config.arkBaseUrl),
+    "base_url = " + JSON.stringify(baseUrl),
     'env_key = "ARK_API_KEY"',
     'wire_api = "responses"',
     "requires_openai_auth = false",
     "",
   ].join("\n");
-  await writeFile(path.join(config.codexHome, "config.toml"), toml, {
+  await writeFile(path.join(codexHome, "config.toml"), toml, {
     encoding: "utf8",
     mode: 0o600,
   });
