@@ -864,6 +864,26 @@ and the one-off work left alone.
   and the learned rules.
 - **Codify guarantees a visible, versioned brief and bounded capability — not
   correctness.**
+- **Data provisioning is out of scope; the mock resource set stands in for it.**
+  There is no upload path, by choice. Bytes reach a workspace one of two ways,
+  and Codify governs one of them: a task that *fetches* its own inputs is bound
+  by its contract's domain allowlist at the broker, while a task whose inputs
+  are *staged* for it — a mount, a sync, an upload — depends on plumbing that
+  belongs to a deployment rather than to middleware. The finance, repo and
+  incident fixtures are that staging, made reproducible. What Codify governs is
+  the boundary itself: what may cross it, and what a task may do inside it.
+- **Paths that diverge across a task family narrow the derived scope towards
+  nothing.** Matching is path-insensitive — canonicalisation collapses every
+  path to `{PATH}`, which is why twelve wordings of one task cluster. Scope
+  derivation is the opposite: path-specific, and filtered at the same majority
+  floor as everything else. So if the same task genuinely ran against
+  `./finance` for some people and `./data/finance` for others, the prompts would
+  still form one family while *neither* path cleared the floor, and the contract
+  would grant no readable path at all. It fails in the safe direction — the task
+  breaks visibly and an operator widens it through the escalation path, which
+  requires a recorded denial — but it fails. A single per-Agent workspace makes
+  this rare in practice, because the platform, not the user, decides where the
+  data sits.
 - **Identity is asserted, not authenticated.** The principal comes from an
   `x-codify-user` header (`app.ts`), and the Starter Kit's bearer token is one
   shared secret rather than a user identity. This is the mock identity model the
