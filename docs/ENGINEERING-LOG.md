@@ -180,16 +180,39 @@ under that specialist's permissions. Unrecognised fragments now go to the
 promotes a specialist for them. The platform learns the missing task from its own
 leftovers, which is the same loop the whole system runs on.
 
-**What is not measured, and must be said plainly:** how often the model splits a
-real compound request *correctly*. The parse and rejection rules are unit-tested
-without a network, the wiring is tested with the call stubbed, and every
-rejection path returns the prompt unsplit — but the accuracy of the split itself
-is an open number, and it is the number that decides whether the model call earns
-its place. The harness is in the repo — `planner.live.test.ts`, 8 compound probes
-with constructed ground truth and 8 single-task probes, three of them written to
-look compound — and skips without `ARK_API_KEY` + `ARK_MODEL`, like the other
-live test. Running it and recording the table in `docs/SEMANTIC-ROUTING.md` §4d
-is the single highest-value thing left to do.
+**Measured, and it caught something.** `planner.live.test.ts` scores the split
+against constructed ground truth: 8 compound probes built by concatenating two
+task descriptions the file writes itself, and 8 single-task probes, three of them
+written to *look* compound.
+
+Final: **8/8 split, 8/8 both halves kept, 8/8 ordering right, 0/8 false splits**,
+identical across four consecutive runs. Every "then" probe earned a dependency
+and every "and" probe earned none, so the parallelism is inferred from the
+request rather than assumed.
+
+The first run was not that. Recall was already 8/8, but **2/8 single tasks were
+falsely split**, both the same shape — *"audit the dependencies … and write the
+findings to ./reports/audit.md"* became two steps, the second of which just
+writes down the first one's output. That is exactly how the seeded contracts are
+worded, so it would have shredded ordinary prompts into two runs, the second with
+nothing to do.
+
+The instruction had said *"producing a document, then sending it somewhere, are
+two"*, and the model reasonably read "sending it somewhere" as "writing it to a
+file". The fix was to define a second job as **work that leaves the workspace** —
+mail, a channel, a ticket, a pull request, a deploy — and to name the shapes that
+stay together: a result and the file it is written to, a deliverable and its
+shape, several things gathered into one document. False splits went to 0 with
+recall unchanged.
+
+Worth recording *why* this was the defect that got through: the rejection rules
+were already unit-tested and the wiring was already integration-tested. Neither
+can catch a planner that is confidently wrong about what counts as a task. Only
+ground truth can, which is the same lesson as §2.2 — a matcher that typechecks
+and passes its tests can still recognise almost nothing.
+
+The remaining honest caveat is scope, not correctness: eight probes the author
+wrote is a floor on confidence, not a population estimate.
 
 ---
 
@@ -292,8 +315,8 @@ re-cluster the whole store. One cause, both symptoms.
 | test | proves | how to run |
 |---|---|---|
 | `npm run check` | 224 tests, typecheck, both builds | `npm run check` |
-| `semantic.live.test.ts` | recognition against a real Ark endpoint | set `ARK_API_KEY` + `ARK_EMBED_MODEL`; skips otherwise |
-| `planner.live.test.ts` | how well a compound request is split, and how often a single task is split by mistake | set `ARK_API_KEY` + `ARK_MODEL`; skips otherwise |
+| `semantic.live.test.ts` | recognition against a real Ark endpoint | `ARK_API_KEY` + `ARK_EMBED_MODEL`; see §10 |
+| `planner.live.test.ts` | **8/8 split, 8/8 both halves, 8/8 ordering, 0/8 false splits** over four runs | `ARK_API_KEY` + `ARK_MODEL`; see §10 |
 | live-demo (49 checks) | the policy **binds** — real Docker, real Codex, derived scope enforced, `ab.chatgpt.com` refused, budget 429, trace, two specialists never sharing a scope | scratch harness, needs a container engine |
 | office run (1,748 prompts) | the **learning loop** from an empty store | scratch harness |
 
@@ -303,6 +326,8 @@ re-cluster the whole store. One cause, both symptoms.
   three channels **100%**, background false positives **0/2000**.
 - Office run: **12/12** families promoted by prompt 100, **297/297** carryover,
   **0/788** one-off requests routed, **0** contracts holding two families' egress.
+- Splitting a compound request: **8/8** split with both halves kept and the
+  ordering right, **0/8** false splits on single tasks, stable over four runs.
 - Datasets: `google-research-datasets/paws`, `SetFit/qqp`,
   `agentlans/allenai-WildChat`, `fka/prompts.chat`, `bigcode/bigcodebench`,
   `princeton-nlp/SWE-bench`.
@@ -331,29 +356,77 @@ re-cluster the whole store. One cause, both symptoms.
 
 ## 9. Open items
 
-**Blocking.** The GitHub repository is **private**. Anonymous clone returns
-404/401, so a reviewer cannot clone it — the first line of the acceptance
-checklist. Nothing else matters until that changes.
+**Blocking, and not fixable from here.** The GitHub repository is **private**.
+Anonymous clone returns 404/401, so a reviewer cannot clone it — the first line
+of the acceptance checklist. The git credential on this machine has `push` but
+**not `admin`** on `JU1Hasugian/ArmyOfGod` (confirmed via the API:
+`permissions.admin: false`), and `gh` is not installed, so no agent can flip it.
+The owner must do it: **Settings → General → Danger Zone → Change visibility**.
+Nothing else in the submission compensates for this.
 
-**Unmeasured — split quality.** How often the planner splits a real compound
-request correctly (§3). Detection is measured; the split is implemented, safe by
-construction, and unquantified. This is the highest-value open measurement,
-because it is the only claim in the project resting on a model call whose output
-has not been checked against generated ground truth.
-
-**Unmeasured.** The *consistency* claim — that a specialist's output is more
-predictable than a general agent's — still rests on one hand-picked A/B. Three
+**Unmeasured — consistency.** The claim that a specialist's output is more
+predictable than a general agent's still rests on one hand-picked A/B. Three
 attempts to measure it properly were invalidated (§6). The ad-hoc control
 happened to produce identical structure across 4 runs, so on that task there was
-no variance to close.
+no variance to close. If you attempt it again, the trap that invalidated every
+previous attempt is that the control arm gets **delegated back to the specialist
+it is being compared against** — `forceAdHoc: true` is the fix, and it must be
+verified in the resulting `RouteDecision`, not assumed.
+
+**Measured, with a caveat of scope.** Split quality is now 8/8 / 8/8 / 8/8 with
+0/8 false splits across four runs (§3, `docs/SEMANTIC-ROUTING.md` §4d) — but on
+eight probes the author wrote. That is a floor on confidence, not a population
+estimate. Widening it to generated compound prompts, the way §4c did for
+matching, would strengthen it.
 
 **Known limitations**, in `docs/CODIFY.md` §11: within-family over-matching, word
 order (PAWS unaffected by embeddings), budget binding at admission only,
-coordination advancing one turn per call, JSON persistence being single-process.
+goal-driven sessions advancing one turn per call (plan-backed ones advance a
+whole wave), and JSON persistence being single-process.
 
 **Worth considering next.** Delegation switches the view to another agent
 mid-conversation; a stub in the original transcript (*"→ handed to Release
 notes"*) would keep the user's history continuous without changing the
 architecture. And the demo should lead with the derived scope — *"nobody wrote
-this policy"* — then the appended-exfiltration case, then `ab.chatgpt.com`.
-Breadth is explicitly not what the brief rewards.
+this policy"* — then the appended-exfiltration case, then `ab.chatgpt.com`, then
+the compound request being split. Breadth is explicitly not what the brief
+rewards.
+
+---
+
+## 10. Running the live tests
+
+Two suites reach a real endpoint and **skip** without credentials, so
+`npm run check` is green on any machine. The key is **not in the repo and must
+never be** — the brief forbids committing or displaying it. Ask the user for it
+and pass it inline; environment variables do not persist between tool calls.
+
+```bash
+cd apps/server
+
+# semantic channel: clustering, promotion and routing against real embeddings
+ARK_API_KEY=<ask the user> ARK_MODEL=ep-20260826090551-mg6j8 ARK_EMBED_MODEL=ep-20260826091905-dgsx5 ARK_BASE_URL=https://ark.ap-southeast.volces.com/api/v3   npx vitest run src/codify/semantic.live.test.ts
+
+# split quality: 8 compound probes + 8 single-task probes
+ARK_API_KEY=<ask the user> ARK_MODEL=ep-20260826090551-mg6j8 ARK_BASE_URL=https://ark.ap-southeast.volces.com/api/v3   npx vitest run src/codify/planner.live.test.ts --disable-console-intercept
+```
+
+`--disable-console-intercept` matters: vitest swallows a **passing** test's
+`console.log`, so without it the measurement table is invisible and you only see
+the tables of tests that failed. That cost a confused re-run.
+
+Two more traps, both of which cost time here:
+
+- The endpoints are **two different models**. `ARK_MODEL` is the chat endpoint
+  (`/responses`) and `ARK_EMBED_MODEL` is the embedding endpoint
+  (`/embeddings/multimodal`). The planner needs only the first; the semantic
+  channel needs only the second.
+- A live suite that finishes in **under a second has not called anything**.
+  `complete()` returns `null` on every failure path — wrong key, wrong endpoint,
+  disabled flag — and every caller falls back silently, by design. Check the
+  wall-clock duration before believing a result: eight planner probes take
+  roughly 4–8 s.
+
+**Working tree hygiene.** `Hackathon Track 1.txt` (the brief) is deliberately
+untracked. Scratch harnesses belong in the scratchpad directory, never in
+`apps/server` — one was committed by mistake and removed in `c87931f`.

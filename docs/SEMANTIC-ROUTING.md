@@ -633,38 +633,76 @@ one step. A planner that misbehaves costs the split and nothing else. Those
 rules are unit-tested in `planner.test.ts` without a network, because the rules
 are the part that has to be right.
 
-### What is not yet measured
+### Measured: how well it actually splits
 
-**Split quality against the live endpoint has not been measured yet.** The parse
-and rejection rules are tested deterministically, and the wiring is tested with
-the model call stubbed — but how often the model splits a real compound request
-*correctly* is an open number, and it is the number that decides whether this
-feature earns its model call.
+`planner.live.test.ts`, against the real endpoint. Ground truth is constructed
+rather than judged — each compound probe is built by concatenating two task
+descriptions the file writes itself, so the correct split is known before the
+model sees it, and a fragment is attributed by which half it lexically overlaps
+more.
 
-The harness exists and is in the repo: `planner.live.test.ts`, skipped without
-credentials in the same way as `semantic.live.test.ts`. Ground truth is
-constructed rather than judged — each of 8 compound probes is built by
-concatenating two task descriptions the file itself writes, so the correct split
-is known before the model sees it, and a fragment is attributed by which half it
-lexically overlaps more. It reports three numbers: how many compound requests
-were split, how many kept **both** halves, and how many got the *ordering* right
-(a probe joined with "then" should produce a dependency; one joined with "and"
-should not). A second case runs 8 single-task probes — three of them written to
-*look* compound — and reports false splits.
+**Eight compound probes**, five joined with "and" (independent) and three with
+"then" (the second needs the first):
 
-```bash
-ARK_API_KEY=your-ark-key ARK_MODEL=ep-your-chat-endpoint ARK_BASE_URL=https://ark.ap-southeast.volces.com/api/v3   npx vitest run src/codify/planner.live.test.ts
+| probe | steps | halves kept | dependencies |
+|---|---|---|---|
+| signups + email | 2 | both | 1 |
+| status + email | 2 | both | 1 |
+| release + email | 2 | both | 1 |
+| audit + status | 2 | both | 0 |
+| signups + audit | 2 | both | 0 |
+| invoice + status | 2 | both | 0 |
+| release + audit | 2 | both | 0 |
+| signups + status | 2 | both | 0 |
+
+**split 8/8 · both halves kept 8/8 · ordering right 8/8**, identical across four
+consecutive runs.
+
+The ordering column is the one a flat list could not produce. Every "then" probe
+earned a dependency and every "and" probe earned none — so the parallelism is
+inferred from the request, not assumed.
+
+**Eight single-task probes**, three of them written to *look* compound
+("…broken down by channel **and** by region **and** write the result to…"):
+**0/8 false splits**.
+
+### The over-splitting defect this measurement caught
+
+The first live run scored 8/8 on recall and **2/8 false splits**, both the same
+shape:
+
+```
+audit the dependencies in ./repo for known advisories and write the findings to ./reports/audit.md
+  -> audit the dependencies in ./repo for known advisories
+  -> write the findings from the dependency audit to ./reports/audit.md
 ```
 
-The asymmetry in the assertions is deliberate: a missed split costs the second
-half its own specialist, while a **false** split costs a container start, a model
-turn, and a request the user never made. So the floor on false splits is tighter
-than the floor on recall.
+Writing a deliverable to its own path is not a second job — and that is exactly
+how the seeded contracts are worded, so shipping it would have shredded ordinary
+prompts into two runs, the second with nothing to do. The instruction had said
+*"producing a document, then sending it somewhere, are two"*, and the model
+generalised "sending it somewhere" to "writing it to a file".
 
-Until that measurement exists, the honest claim is narrower than the feature:
-*the detection is measured, the split is implemented and safe by construction —
-every fragment is narrower than the prompt it came from — and its accuracy is
-unquantified.*
+The fix was to say what a second job actually is: **work that leaves the
+workspace** — mail, a channel, a ticket, a pull request, a deploy — and to name
+the three shapes that stay together (a result and the file it is written to; a
+deliverable and its shape; several things gathered into one document). False
+splits went to 0/8 with recall unchanged at 8/8.
+
+This is the whole reason the measurement exists. The rejection rules were
+already unit-tested, the wiring was already integration-tested, and neither
+would have caught a planner that was confidently wrong about what a task is.
+
+The assertion floors are set one probe below the measured result, so a
+reviewer's endpoint does not fail on a coin flip:
+
+```bash
+ARK_API_KEY=your-ark-key ARK_MODEL=ep-your-chat-endpoint ARK_BASE_URL=https://ark.ap-southeast.volces.com/api/v3   npx vitest run src/codify/planner.live.test.ts --disable-console-intercept
+```
+
+The asymmetry in those floors is deliberate: a missed split costs the second half
+its own specialist, while a **false** split costs a container start, a model
+turn, and a request the user never made.
 
 ---
 
@@ -685,9 +723,10 @@ unquantified.*
   refuses unmatched prompts outright — see §6. The compound case, where the
   fail-open was *rewarded* rather than merely available, is handled separately
   in §4d.
-- **How well the planner splits is unmeasured.** §4d. The detection is measured
-  and every fragment is narrower than the request it came from, but the accuracy
-  of the split itself is an open number.
+- **The planner is measured on eight constructed probes, not on live traffic.**
+  §4d. 8/8 split with both halves kept and the ordering right, 0/8 false splits,
+  stable across four runs — but eight probes the author wrote is a floor on
+  confidence, not a population estimate.
 - **The semantic channel can be absent.** No endpoint, an unactivated model, an
   exhausted retry budget: matching degrades to the lexical channels, which is
   the behaviour the platform had before. `/api/system` reports

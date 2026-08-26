@@ -138,11 +138,16 @@ describe.skipIf(!LIVE)("splitting a compound request, against a live Ark endpoin
         " · ordering right " + orderedCorrectly + "/" + COMPOUND.length,
     );
 
-    // A planner that splits fewer than most compound requests is not earning
-    // its model call. These are floors, not targets — the printed table is the
-    // measurement, and it belongs in docs/SEMANTIC-ROUTING.md §4d.
-    expect(split).toBeGreaterThanOrEqual(Math.ceil(COMPOUND.length * 0.75));
-    expect(bothHalves).toBeGreaterThanOrEqual(Math.ceil(COMPOUND.length * 0.75));
+    // Floors, not targets. Four consecutive runs scored 8/8/8, so these leave
+    // one probe of headroom for model nondeterminism rather than pinning the
+    // measured result — a reviewer's endpoint should not fail on a coin flip.
+    // The printed table is the measurement; it lives in
+    // docs/SEMANTIC-ROUTING.md §4d.
+    expect(split).toBeGreaterThanOrEqual(COMPOUND.length - 1);
+    expect(bothHalves).toBeGreaterThanOrEqual(COMPOUND.length - 1);
+    // The half a flat list cannot express: "then" earns a dependency, "and"
+    // does not. Without this the plan is a sequence wearing a graph's clothes.
+    expect(orderedCorrectly).toBeGreaterThanOrEqual(COMPOUND.length - 2);
   }, 180_000);
 
   it("leaves a single task alone", async () => {
