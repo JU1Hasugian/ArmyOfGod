@@ -153,6 +153,19 @@ button {
   align-items: center;
   justify-content: center;
   gap: 7px;
+  /*
+   * A default pair, because `.button` on its own is used in a dozen places —
+   * Reject, Rescan observations, Escalate, Open session. Without one they fall
+   * through to the browser's default face, which belongs to no design system
+   * and is not guaranteed to contrast with whatever it is sitting on. Variants
+   * below override it; `.nav-button` overrides it for the dark sidebar.
+   */
+  background: #f0efea;
+  color: #464741;
+}
+
+.button:hover:not(:disabled) {
+  background: #e4e2da;
 }
 
 .button:disabled {
@@ -541,7 +554,14 @@ label {
   font-weight: 600;
 }
 
-input,
+/*
+ * Scoped away from checkboxes and radios on purpose. A checkbox inheriting
+ * `width: 100%` and `height: 40px` stretches to fill its row and stands 40px
+ * tall — which is exactly how the session participant boxes rendered. Excluding
+ * the two here fixes every such control at once, including any added later,
+ * rather than patching each instance where one turns up.
+ */
+input:not([type="checkbox"]):not([type="radio"]),
 textarea {
   width: 100%;
   border: 1px solid #d9d7cf;
@@ -552,10 +572,22 @@ textarea {
   transition: 150ms ease;
 }
 
-input {
+input:not([type="checkbox"]):not([type="radio"]) {
   height: 40px;
   padding: 0 12px;
   margin-top: 6px;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  /* Never a shrinkable flex item: the label beside it should wrap before the
+     control does. */
+  flex: none;
+  accent-color: var(--purple);
+  cursor: pointer;
 }
 
 textarea {
@@ -565,7 +597,7 @@ textarea {
   line-height: 1.55;
 }
 
-input:focus,
+input:not([type="checkbox"]):not([type="radio"]):focus,
 textarea:focus {
   border-color: #8a78e8;
   box-shadow: 0 0 0 3px rgba(105, 84, 217, 0.11);
@@ -1690,14 +1722,7 @@ textarea:focus {
   flex: none;
 }
 
-.adhoc-toggle input {
-  /* Same reason: a flex child with no basis gets stretched by the row. */
-  flex: none;
-  width: 13px;
-  height: 13px;
-  margin: 0;
-  cursor: pointer;
-}
+
 
 /* -------------------------------------------- Codify: delegation & learning -- */
 
@@ -1948,6 +1973,13 @@ textarea:focus {
   margin-bottom: 14px;
 }
 
+.new-session > input,
+.new-session > textarea {
+  /* The container spaces its children with `gap`; the global top margin would
+     add to it rather than replace it. */
+  margin-top: 0;
+}
+
 .session-participants {
   display: flex;
   flex-wrap: wrap;
@@ -1968,6 +2000,8 @@ textarea:focus {
   gap: 6px;
   font-size: 12px;
   color: var(--muted);
+  white-space: nowrap;
+  flex: none;
 }
 
 .turn-cap input {

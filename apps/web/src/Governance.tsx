@@ -526,7 +526,7 @@ function SessionCard({
             {busy ? "Running a turn…" : "Take the next turn"}
           </button>
           <button
-            className="button ghost"
+            className="button button-ghost"
             disabled={busy}
             onClick={() => void act(() => api.stopSession(session.id))}
           >
