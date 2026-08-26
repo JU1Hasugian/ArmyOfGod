@@ -314,6 +314,7 @@ docker compose config
 
 - [Codify middleware design](docs/CODIFY.md)
 - [Semantic routing: measurement, diagnosis, fix](docs/SEMANTIC-ROUTING.md)
+- [Engineering log: decisions, rejected ideas, and measurement mistakes](docs/ENGINEERING-LOG.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Local POC](docs/LOCAL_POC.md)
 - [Deployment](docs/DEPLOYMENT.md)
