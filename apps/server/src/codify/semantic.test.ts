@@ -310,8 +310,13 @@ describe("detection clusters real wordings, not just near-duplicates", () => {
   it("recovers one cluster once the semantic channel is present", () => {
     const base = vector(17, 128);
     const items = [
+      // Two vectors each at cosine c to a common base have a *mutual* cosine of
+      // roughly c-squared, and clustering compares members to each other rather
+      // than to the base. At c=0.82 that is 0.67, which sits under the
+      // threshold and splits the family — so the fixture has to be tighter than
+      // the threshold it is testing, not merely above it.
       ...WORDINGS.map((text, index) =>
-        candidate(text, packEmbedding(nearVector(base, 0.82 + index * 0.01, 60 + index))),
+        candidate(text, packEmbedding(nearVector(base, 0.93 + index * 0.01, 60 + index))),
       ),
       ...OTHERS.map((text, index) =>
         candidate(text, packEmbedding(nearVector(base, 0.2 + index * 0.05, 90 + index))),

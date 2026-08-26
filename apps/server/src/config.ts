@@ -68,7 +68,7 @@ const envSchema = z.object({
    * Cosine required for the semantic channel. Inert unless ARK_EMBED_MODEL is
    * set, because there is nothing to compare against without an embedding.
    */
-  CODIFY_SEMANTIC_THRESHOLD: z.coerce.number().min(0).max(1).default(0.7),
+  CODIFY_SEMANTIC_THRESHOLD: z.coerce.number().min(0).max(1).default(0.72),
   /**
    * Master switch for the embedding channel. Off under test so the suite never
    * reaches the network; the lexical channels are exercised on their own there.

@@ -581,6 +581,38 @@ container-level tests, where a deliberately cooperating process gets
 
 ---
 
+## 10b. Verified on the container path, end to end
+
+`docs/SEMANTIC-ROUTING.md` measures the matcher. This is the platform: a clean
+checkout on Linux, a real Docker engine, the Runtime image built from
+`Dockerfile.runtime`, real Codex turns, real Ark. **49 of 49 checks passed.**
+
+Trace, budget and coordination had 55 unit tests between them and had never run
+against a real turn before this. That gap is now closed.
+
+| | evidence |
+|---|---|
+| Startup | `npm run poc` from a fresh checkout: image built, server up, `codifyEnforcing: true`, `codexAvailable: true` |
+| Detection | the release-notes family clustered at **12 runs from 6 users**; the one-user poisoning family stayed out |
+| A governed run | completed on the container path, 39,183 input / 946 output tokens |
+| **Trace** | **11 spans**, one `traceId`, parented under the turn, across `orchestration`, `policy_decision`, `budget_check`, `sandbox_execution`, `model_call`, `egress` |
+| **Enforcement** | one denial, unprompted: `egress:ab.chatgpt.com` — Codex's own telemetry, refused because the contract allows only `github.com`. It appears in the trace as a denied span. |
+| Padding evasion | fingerprint **0.578** (under its 0.65 threshold), containment **1.000** → the turn stayed governed, on the containment channel |
+| Principal binding | an unrecognised prompt at the specialist returned `principal_bound`, `brokerMode: enforce`, under that contract's scope |
+| **Budget** | 429 at admission: *"Token budget exhausted: 606,724 of 10 tokens spent under this contract"*, with a `budget` `DenialEvent` |
+| **Coordination** | two specialists with genuinely different scopes (`["github.com"]` vs `[]`); the release step went to the release specialist and **ran under one scope, not the union**; the session stopped at its turn ceiling |
+| Secrets | the Ark key appears in no stored record |
+
+### One thing the run exposed that the design predicted
+
+The kernel in that environment does not expose Landlock, so Codex fell back to
+`danger-full-access` — visible in `/api/system`. That is precisely the case §4
+argues for: Codex's own sandbox is the layer that disappears, and Codify's
+read-only workspace mount and `--internal` network are what remain. The
+enforcement evidence above was collected *with Codex's sandbox switched off*.
+
+---
+
 ## 11. Known limitations
 
 - **Routing fails open.** A prompt that clears no channel runs ad hoc and
@@ -590,6 +622,12 @@ container-level tests, where a deliberately cooperating process gets
   the *principal* rather than to the classification, so a promoted specialist
   runs under its contract's scope whichever prompt it is handed. `route()` still
   ignores `agentId`; that change is **not implemented**.
+- **Within-family over-matching.** On 325 adversarially generated near-miss
+  probes — an adjacent job phrased in a governed task's own vocabulary — the
+  router matches about half at the default threshold. Cross-contract error is
+  zero, so the cost is a wrong brief inside a narrower-than-ungoverned scope, not
+  a containment failure. Measured only once the benchmark stopped being written
+  by the same person who wrote the matcher; see `docs/SEMANTIC-ROUTING.md` §4c.
 - **Word order is not handled.** On PAWS — pairs built to share vocabulary while
   differing in meaning — the semantic channel scores AUC 0.743 against MinHash's
   0.741, i.e. no better. A swapped-argument prompt does still land on a contract

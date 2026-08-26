@@ -69,11 +69,30 @@ export const DEFAULT_CONTAINMENT_THRESHOLD = 0.6;
 /**
  * Cosine required to treat two prompts as the same task.
  *
- * The weakest true positive in the corpus scored 0.753 and the strongest of 370
- * unrelated real prompts scored 0.307. 0.70 sits in that gap, biased towards
- * catching: routing still fails open, so a miss costs an ungoverned run.
+ * Two measurements set this. Against 2,000 real prompts the strongest score was
+ * 0.383, so the floor is nowhere near real traffic. The binding constraint is
+ * *confusable* text: 325 near-miss probes — generated adversarially to share a
+ * task's vocabulary while asking for a different job — score p50 0.710 and p75
+ * 0.768, against genuine rewordings at p05 0.797. Those distributions overlap,
+ * so no threshold separates them cleanly and the choice is a trade:
+ *
+ *     0.70   100.0% recall   1 cross-contract error   173/325 near-miss matched
+ *     0.72    99.4%          0                        150/325
+ *     0.78    97.8%          0                         87/325
+ *     0.84    81.9%          0                         40/325
+ *
+ * 0.72 is the cheapest point that removes cross-contract error entirely — a
+ * prompt routed to the *wrong* task's contract, which applies both the wrong
+ * brief and the wrong scope. The remaining near-miss matches are within-family:
+ * an adjacent job in the same domain, matched to that domain's contract, which
+ * constrains it rather than misdirecting it.
+ *
+ * Biasing higher is defensible now in a way it was not before. The old argument
+ * for a low threshold was that a miss cost an ungoverned run. Principal binding
+ * changed that: a miss on a promoted specialist still runs under its own scope,
+ * so a miss now costs the brief and not the containment.
  */
-export const DEFAULT_SEMANTIC_THRESHOLD = 0.7;
+export const DEFAULT_SEMANTIC_THRESHOLD = 0.72;
 
 // ------------------------------------------------------------------ storage
 
