@@ -47,6 +47,23 @@ describe("Codify scope derivation", () => {
     expect(deriveScope(observations).domains).toEqual(["github.com"]);
   });
 
+  /**
+   * Codex contacts its telemetry endpoint on every turn, so the host clears the
+   * frequency floor in every family. Left in, every contract the platform ever
+   * derives would grant a host no task asked for — and `ab.chatgpt.com` would
+   * stop being refused at the broker, which is the clearest denial the design
+   * has, and it is refused precisely because no contract names it.
+   */
+  it("keeps the Runtime's own telemetry out of a task's scope", () => {
+    const observations = [1, 2, 3, 4].map((n) =>
+      observation({
+        runId: "run-" + n,
+        domainsReached: ["ab.chatgpt.com", "api.frankfurter.dev"],
+      }),
+    );
+    expect(deriveScope(observations).domains).toEqual(["api.frankfurter.dev"]);
+  });
+
   it("caps the number of derived domains", () => {
     const many = Array.from({ length: 12 }, (_, index) => "host" + index + ".example");
     const observations = Array.from({ length: 4 }, (_, index) =>

@@ -184,7 +184,9 @@ export async function createApp(
   app.get("/api/auth", async () => ({ required: config.authToken.length > 0 }));
 
   app.get("/api/system", async (request) => ({
-    ...service.systemInfo(),
+    // `systemInfo` is async — spreading the promise silently yields nothing,
+    // which emptied this payload down to the three fields added below.
+    ...(await service.systemInfo()),
     principal: principal(request, config.codifyDefaultUser),
     // So the UI can show the governance controls as refused rather than
     // pretending they were never there. The route is the authority either way.

@@ -26,7 +26,7 @@ answer, and least privilege arrives as a side effect.
 Read in this order: `README.md` → `docs/CODIFY.md` (design) →
 `docs/SEMANTIC-ROUTING.md` (all measurement).
 
-**Where things stand.** Ten mechanisms, all implemented and enforced; 241 tests
+**Where things stand.** Ten mechanisms, all implemented and enforced; 242 tests
 across 31 files, of which 3 skip without live credentials; `npm run check` green
 (typecheck + suite + both production builds). Every headline claim is measured
 against data the author did not write, and §9 lists what is not.
@@ -383,11 +383,38 @@ mattered was found by running the thing against real input, not by reading it.
 
 ---
 
+**The Runtime's own telemetry was being written into every policy.** Codex
+contacts `ab.chatgpt.com` on every turn, so the host appeared in 100% of a
+family's runs and cleared the frequency floor by a mile. `deriveScope` filtered
+`NEVER_ALLOW_DOMAINS` — cloud metadata, the classic SSRF target — but nothing
+filtered traffic that was *ours* rather than the task's, so the first
+network-capable contract derived on the container path proposed
+`["ab.chatgpt.com", "api.frankfurter.dev"]`.
+
+Two things wrong with that. It grants every task a host no task asked for. And
+it quietly destroys the sharpest denial in the demo: `ab.chatgpt.com` is refused
+at the broker *precisely because no contract names it*, which stops being true
+the moment observation writes it into every contract.
+
+Filtered at derivation, not at observation — the capability record still says
+honestly that the run reached it. Same shape as `.codex` appearing in
+`pathsWritten`: the platform's own bookkeeping described as though the task had
+asked for it.
+
+There was a second-order effect worth recording. Before the fix the candidate
+was **held for review** rather than auto-promoted; after it, the same three runs
+promoted cleanly with the note *"All capabilities are necessary for fetching
+exchange rates and saving output."* The reviewer had been balking at a scope
+that contained something the task plainly did not need — which is the reviewer
+working, on evidence that should never have reached it.
+
+---
+
 ## 7. Verification surface
 
 | test | proves | how to run |
 |---|---|---|
-| `npm run check` | 241 tests, typecheck, both builds | `npm run check` |
+| `npm run check` | 242 tests, typecheck, both builds | `npm run check` |
 | `semantic.live.test.ts` | recognition against a real Ark endpoint | `ARK_API_KEY` + `ARK_EMBED_MODEL`; see §10 |
 | `planner.live.test.ts` | **8/8 split, 8/8 both halves, 8/8 ordering, 0/8 false splits** over four runs | `ARK_API_KEY` + `ARK_MODEL`; see §10 |
 | live-demo (49 checks) | the policy **binds** — real Docker, real Codex, derived scope enforced, `ab.chatgpt.com` refused, budget 429, trace, two specialists never sharing a scope | scratch harness, needs a container engine |

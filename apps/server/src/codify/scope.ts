@@ -19,6 +19,26 @@ export const NEVER_ALLOW_DOMAINS = [
   "100.100.100.200",
 ];
 
+/**
+ * Hosts the Agent Runtime contacts for its own reasons, whatever the task is.
+ *
+ * Codex phones its telemetry endpoint on every turn, so the host appears in
+ * 100% of a family's runs and clears the frequency floor by a mile. Left in, it
+ * would be written into the allowlist of every contract the platform ever
+ * derives — a permission granted to every task, that no task asked for, and
+ * that describes the platform rather than the work.
+ *
+ * Separate from `NEVER_ALLOW_DOMAINS`, which is about targets nothing may ever
+ * reach (cloud metadata, the classic SSRF destination). This list is about
+ * traffic that is *ours* rather than the task's: it is not dangerous, it is
+ * simply not evidence of what the task needs.
+ *
+ * Removing it here also restores the demo's sharpest denial. `ab.chatgpt.com`
+ * is refused at the broker precisely because no contract names it — which stops
+ * being true the moment observation writes it into every contract.
+ */
+export const RUNTIME_INFRASTRUCTURE_DOMAINS = ["ab.chatgpt.com", "chatgpt.com"];
+
 /** Workspace subtrees that must never enter a proposed scope. */
 const EXCLUDED_PATH_SEGMENTS = [".ssh", ".aws", ".config", ".git", "node_modules"];
 
@@ -107,6 +127,7 @@ export function deriveScope(
     floor,
   )
     .filter((domain) => !NEVER_ALLOW_DOMAINS.includes(domain))
+    .filter((domain) => !RUNTIME_INFRASTRUCTURE_DOMAINS.includes(domain))
     .slice(0, MAX_DERIVED_DOMAINS);
 
   const writeDirectories = collapsePaths(
