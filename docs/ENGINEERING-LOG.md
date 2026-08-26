@@ -26,6 +26,16 @@ answer, and least privilege arrives as a side effect.
 Read in this order: `README.md` → `docs/CODIFY.md` (design) →
 `docs/SEMANTIC-ROUTING.md` (all measurement).
 
+**Where things stand.** Ten mechanisms, all implemented and enforced; 224 tests
+across 27 files, of which 3 skip without live credentials; `npm run check` green
+(typecheck + suite + both production builds). Every headline claim is measured
+against data the author did not write, and §9 lists what is not.
+
+If you are picking this up cold, start at **§9 Open items** — the one blocking
+item cannot be fixed by an agent — and **§10** for how to run the two live
+suites. **§6** is a list of ways the measurements themselves went wrong; it will
+save you from repeating at least two of them.
+
 ---
 
 ## 2. What was found broken, and fixed
@@ -309,6 +319,21 @@ promoted, which left every observation eligible forever and made each pass
 re-cluster the whole store. One cause, both symptoms.
 
 ---
+
+**A live suite that "ran" in 474 ms.** The first attempt at the split
+measurement reported 0/8 on every probe and looked like a catastrophic result.
+It was not a result at all: the key had been recovered with a character class
+that truncated it, `complete()` returned `null` on every call, and every caller
+fell back to a single step **by design**. Nothing in the output said so — a
+silent fallback and a genuine 0/8 are indistinguishable from the table alone.
+The tell was the wall clock: eight model calls cannot finish in 474 ms. Check
+duration before believing any live number, and prefer a fixture that fails loudly
+over a fallback that fails quietly when the thing under test *is* the call.
+
+**Reading a passing test's output.** Vitest swallows `console.log` from tests
+that pass and only surfaces it for failures, so the first successful run printed
+no table and looked like it had measured nothing. `--disable-console-intercept`
+is in §10 for that reason.
 
 ## 7. Verification surface
 
