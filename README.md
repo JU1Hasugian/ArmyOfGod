@@ -1,17 +1,52 @@
-# Volc Agent Launchpad
+# Codify
 
-A minimal Agent platform for three-day middleware hackathons. It provides Agent
-CRUD, a browser Playground, persistent workspaces, and Codex CLI backed by the
-Volcengine Ark Responses API.
+**Agent middleware that writes the security policy by watching the work.**
 
-Run it locally with Docker, Colima, or rootless Podman, or deploy it to
-Volcengine ECS.
+Fifty people ask for the same thing in fifty wordings. Codify notices, distils
+how the task is actually done into a brief, promotes a specialist Agent to carry
+it — and derives that Agent's capability scope from what those runs really did:
+the hosts they reached, the paths they wrote, the credentials they used. Then it
+enforces it at the container boundary.
+
+> *Nobody wrote this policy. It is what these runs already did.*
+
+**The quality half is the adoption mechanism for the security half.** People take
+the governed path because it produces the better answer, and least privilege
+arrives as a side effect they never had to think about. Measured, on one task:
+the governed Agent produced **one document structure across three runs**; the
+ungoverned control produced **four across four**.
+
+Built on the Track 1 Starter Kit, whose baseline — Agent CRUD, Playground,
+persistent workspaces, Codex CLI on Volcengine Ark — is preserved and verified.
+
+| | |
+|---|---|
+| **Start** | `ARK_API_KEY=… ARK_MODEL=ep-… npm run poc`, then open **Codify governance** |
+| **Design** | [`docs/CODIFY.md`](docs/CODIFY.md) — architecture, demo script, limitations |
+| **Measurement** | [`docs/SEMANTIC-ROUTING.md`](docs/SEMANTIC-ROUTING.md) — how the matcher was broken and fixed |
+| **Handover** | [`docs/ENGINEERING-LOG.md`](docs/ENGINEERING-LOG.md) — what was tried, measured, discarded |
+| **Verification** | `npm run check` — 246 tests, typecheck, both builds |
+
+### What it enforces, observed live
+
+A promoted specialist runs in its own `--internal` network with no route
+off-host, reaching the outside only through a broker that allowlists on the
+contract's domains. The workspace is mounted read-only except the paths the task
+actually writes to. All four refusals have been watched happening on the
+container path, with Codex's own sandbox switched off:
+
+| refusal | what was blocked |
+|---|---|
+| **egress** | a second rates API the contract did not name — the run finished on the allowed host |
+| **path** | a write to `finance/` — `EROFS`, the directory unchanged |
+| **budget** | HTTP 429 at admission, before the Run existed |
+| **secret** | `GITHUB_TOKEN` observed in past runs and withheld from auto-promotion |
 
 > [!WARNING]
 > This is a proof of concept. Do not use production data or credentials.
 > See [SECURITY.md](SECURITY.md).
 
-## Codify — the middleware in this repository
+## The problem
 
 **Nobody runs agents with least privilege, because nobody can write the policy.**
 
