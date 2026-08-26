@@ -33,7 +33,9 @@ describe("Container Codex runner", () => {
     );
     expect(args).toContain("runtime:test");
     expect(args).toContain("type=bind,src=/tmp/agent-workspace,dst=/workspace");
-    expect(args).toContain("type=bind,src=/tmp/codex-home,dst=/codex-home");
+    // `config.codexHome` is `path.resolve`d, which is host-specific; assert against
+    // the resolved value so the mount is checked without assuming POSIX paths.
+    expect(args).toContain("type=bind,src=" + config.codexHome + ",dst=/codex-home");
     expect(args).toContain("501:20");
     expect(args).toContain("workspace-write");
     expect(args).toContain("/workspace");

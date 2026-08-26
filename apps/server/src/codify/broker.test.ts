@@ -17,7 +17,7 @@ const closers: (() => Promise<void>)[] = [];
 afterEach(async () => {
   await Promise.all(closers.splice(0).map((close) => close()));
   await Promise.all(
-    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
+    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })),
   );
   vi.unstubAllEnvs();
   vi.resetModules();

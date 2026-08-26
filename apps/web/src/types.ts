@@ -29,7 +29,18 @@ export interface CapabilityScope {
   secrets: string[];
 }
 
-export type RouteOutcome = "routed" | "unmatched" | "user_override";
+export type RouteOutcome =
+  | "routed"
+  | "principal_bound"
+  | "unmatched"
+  | "user_override";
+
+/**
+ * Which of the three match channels carried a routing decision. Shown in the
+ * Playground because "matched at 0.71" is not reviewable on its own — a lexical
+ * overlap and a semantic one mean different things.
+ */
+export type MatchChannel = "fingerprint" | "containment" | "semantic";
 
 export interface RunCodifySummary {
   decision: RouteOutcome;
@@ -38,6 +49,7 @@ export interface RunCodifySummary {
   contractVersion?: number;
   contractName?: string;
   score?: number;
+  matchChannel?: MatchChannel;
   scope?: CapabilityScope;
   denials: number;
   domainsReached: string[];
@@ -83,6 +95,7 @@ export interface TaskContract {
   systemPrompt: string;
   refinements: string[];
   scope: CapabilityScope;
+  budget?: TaskBudget;
   status: "active" | "deprecated";
   createdBy: string;
   createdAt: string;
@@ -110,6 +123,8 @@ export interface RouteDecision {
   contractId?: string;
   contractVersion?: number;
   score?: number;
+  matchChannel?: MatchChannel;
+  matchScores?: { fingerprint: number; containment: number; semantic: number };
   brokerMode: "observe" | "enforce";
   reason: string;
   createdAt: string;
@@ -150,4 +165,94 @@ export interface SystemInfo {
   codifyEnforcing?: boolean;
   codifyMatchThreshold?: number;
   codifyManagedSecrets?: string[];
+}
+
+/** A ceiling a reviewer set on one governed task. Absent fields are unlimited. */
+export interface TaskBudget {
+  maxTotalTokens?: number;
+  maxRuns?: number;
+  maxTokensPerRun?: number;
+}
+
+export interface BudgetUsage {
+  totalTokens: number;
+  runs: number;
+  maxRunTokens: number;
+}
+
+export interface BudgetStatus {
+  allowed: boolean;
+  reason?: string;
+  usage: BudgetUsage;
+  budget?: TaskBudget;
+}
+
+export type SpanCategory =
+  | "orchestration"
+  | "policy_decision"
+  | "budget_check"
+  | "delegation"
+  | "sandbox_execution"
+  | "model_call"
+  | "egress"
+  | "workspace";
+
+export interface TraceSpan {
+  id: string;
+  traceId: string;
+  runId: string;
+  agentId: string;
+  parentId?: string;
+  name: string;
+  category: SpanCategory;
+  status: "ok" | "denied" | "error";
+  startedAt: string;
+  endedAt?: string;
+  durationMs?: number;
+  attributes?: Record<string, string | number | boolean>;
+}
+
+export interface RunTrace {
+  traceId: string;
+  runId: string;
+  agentId: string;
+  startedAt: string;
+  endedAt: string;
+  durationMs: number;
+  spanCount: number;
+  denied: number;
+  errored: number;
+  spans: TraceSpan[];
+}
+
+/** One step of a shared session, and who took it. */
+export interface SessionTurn {
+  index: number;
+  claimedAt: string;
+  agentId: string;
+  agentName: string;
+  contractId?: string;
+  contractName?: string;
+  selection: string;
+  instruction: string;
+  runId?: string;
+  output?: string;
+  error?: string;
+  status: "claimed" | "completed" | "failed";
+  completedAt?: string;
+}
+
+export interface CoordinationSession {
+  id: string;
+  topic: string;
+  goal: string;
+  createdBy: string;
+  participantAgentIds: string[];
+  turns: SessionTurn[];
+  state: Record<string, string>;
+  maxTurns: number;
+  status: "active" | "completed" | "stopped" | "failed";
+  stopReason?: string;
+  createdAt: string;
+  updatedAt: string;
 }

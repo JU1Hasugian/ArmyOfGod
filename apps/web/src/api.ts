@@ -1,13 +1,17 @@
 import type {
   Agent,
   AgentRun,
+  BudgetStatus,
   CapabilityScope,
+  CoordinationSession,
   DenialEvent,
   EscalationProposal,
   Message,
   RefinementProposal,
   RouteDecision,
+  RunTrace,
   SystemInfo,
+  TaskBudget,
   TaskCandidate,
   TaskContract,
 } from "./types";
@@ -123,11 +127,23 @@ export const api = {
       body: JSON.stringify({}),
     }),
   contracts: () => request<{ contracts: TaskContract[] }>("/api/codify/contracts"),
-  reviseContract: (id: string, scope: CapabilityScope) =>
+  /**
+   * Scope and budget move through the same endpoint under opposite rules: a
+   * scope may only be narrowed, a budget may be raised as well as lowered.
+   * `budget: null` clears the ceiling; omitting it leaves the ceiling alone.
+   */
+  reviseContract: (
+    id: string,
+    revision: { scope?: CapabilityScope; budget?: TaskBudget | null },
+  ) =>
     request<{ contract: TaskContract }>("/api/codify/contracts/" + id, {
       method: "PATCH",
-      body: JSON.stringify({ scope }),
+      body: JSON.stringify(revision),
     }),
+  budgetStatus: (id: string) =>
+    request<BudgetStatus>("/api/codify/contracts/" + id + "/budget"),
+  runTrace: (id: string) =>
+    request<{ trace: RunTrace }>("/api/codify/runs/" + id + "/trace"),
   escalation: (id: string) =>
     request<EscalationProposal>("/api/codify/contracts/" + id + "/escalation"),
   runEvidence: (id: string) =>
@@ -135,6 +151,29 @@ export const api = {
       "/api/codify/runs/" + id,
     ),
   denials: () => request<{ denials: DenialEvent[] }>("/api/codify/denials"),
+
+  sessions: () =>
+    request<{ sessions: CoordinationSession[] }>("/api/codify/sessions"),
+  createSession: (body: {
+    topic: string;
+    goal: string;
+    participantAgentIds: string[];
+    maxTurns: number;
+  }) =>
+    request<{ session: CoordinationSession }>("/api/codify/sessions", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  /** One turn per call: a second concurrent call is refused, not queued. */
+  advanceSession: (id: string) =>
+    request<{ session: CoordinationSession }>("/api/codify/sessions/" + id + "/advance", {
+      method: "POST",
+    }),
+  stopSession: (id: string, reason?: string) =>
+    request<{ session: CoordinationSession }>("/api/codify/sessions/" + id + "/stop", {
+      method: "POST",
+      body: JSON.stringify(reason ? { reason } : {}),
+    }),
 
   refinements: () =>
     request<{ refinements: RefinementProposal[] }>("/api/codify/refinements"),

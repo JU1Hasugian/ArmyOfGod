@@ -38,7 +38,33 @@ Start it with `npm run poc`, then open **Codify governance** in the sidebar. The
 review queue is seeded with observed runs, so there is something to approve
 immediately.
 
+Recognising the task is the part that has to survive contact with real users,
+who neither phrase things identically nor always phrase them honestly. Codify
+matches on three channels at once — a lexical fingerprint, exact **containment**,
+and an **embedding** — and routes if any one of them clears its threshold. They
+fail in opposite directions, which is the point: padding a prompt until the
+fingerprint drops leaves containment at 1.000, and rewording or translating it
+until both lexical channels read 0.00 leaves the embedding at 0.78.
+
+And because the prompt is written by the caller, the scope does not depend on
+recognising it. A promoted specialist runs under **its own contract's scope
+whatever it is asked**, so defeating the matcher costs the brief and gains no
+capability. Routing is a quality mechanism; the Agent's identity is the boundary.
+
+Three more controls sit on the same evidence:
+
+- **A correlated trace.** Every Run carries one `traceId`, with the routing
+  decision, the budget check, the Runtime turn and every egress the broker saw
+  nested under it — including the ones it refused.
+- **A token budget.** Spend is recomputed from Run history across the whole
+  contract lineage, so a Run that would start over the ceiling is refused at
+  admission with the same `DenialEvent` an egress block produces.
+- **Shared sessions.** Several specialists take turns on one goal, with each
+  step routed to the Agent whose contract matches it and run under *that* scope —
+  so no participant ever holds the union of everyone's permissions.
+
 **[Read the full design, demo script, tests, and limitations →](docs/CODIFY.md)**
+**[How the matcher was measured, broken, and fixed →](docs/SEMANTIC-ROUTING.md)**
 
 ## Screenshots
 
@@ -230,6 +256,7 @@ cp deploy/volcengine/terraform.tfvars.example \
 | `ARK_API_KEY` | Required | Ark model API key. |
 | `ARK_MODEL` | Required | Responses-capable endpoint or model ID. |
 | `ARK_BASE_URL` | Beijing v3 endpoint | Ark OpenAI-compatible API URL. |
+| `ARK_EMBED_MODEL` | Unset | Ark embedding endpoint ID. Without it Codify matches on the lexical channels alone; `/api/system` reports which. Activate the model in the Ark console first, or the API answers `ModelNotOpen`. |
 | `APP_AUTH_TOKEN` | Empty on loopback | Shared demo token; use 24+ random characters remotely. |
 | `RUNTIME_PROVIDER` | `local-process` | `container` for disposable local Runtime containers. |
 | `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox mode. |
@@ -268,6 +295,7 @@ docker compose config
 ## Documentation
 
 - [Codify middleware design](docs/CODIFY.md)
+- [Semantic routing: measurement, diagnosis, fix](docs/SEMANTIC-ROUTING.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Local POC](docs/LOCAL_POC.md)
 - [Deployment](docs/DEPLOYMENT.md)

@@ -11,7 +11,9 @@ import type {
   RouteOutcome,
   TaskCandidate,
   TaskContract,
+  TraceSpan,
 } from "./codify/types.js";
+import type { CoordinationSession } from "./codify/coordination.js";
 
 export type AgentStatus = "ready" | "busy" | "stopped" | "error";
 export type RunStatus = "queued" | "running" | "completed" | "failed" | "cancelled";
@@ -53,6 +55,8 @@ export interface RunCodifySummary {
   contractVersion?: number;
   contractName?: string;
   score?: number;
+  /** Which match channel carried the routing decision. */
+  matchChannel?: "fingerprint" | "containment" | "semantic";
   scope?: CapabilityScope;
   denials: number;
   domainsReached: string[];
@@ -89,6 +93,8 @@ export interface Database {
   denialEvents: DenialEvent[];
   feedbackObservations: FeedbackObservation[];
   refinementProposals: RefinementProposal[];
+  traceSpans: TraceSpan[];
+  coordinationSessions: CoordinationSession[];
 }
 
 export interface CreateAgentInput {

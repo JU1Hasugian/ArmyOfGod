@@ -87,7 +87,8 @@ describe("Codify scoped container launch", () => {
     const args = buildContainerRunArgs(request, config);
     expect(args).toContain("bridge");
     expect(args).toContain("type=bind,src=/tmp/workspaces/agent-1,dst=/workspace");
-    expect(args).toContain("type=bind,src=/tmp/codex-home,dst=/codex-home");
+    // `config.codexHome` is `path.resolve`d, so compare against the resolved value.
+    expect(args).toContain("type=bind,src=" + config.codexHome + ",dst=/codex-home");
     expect(args.join(" ")).not.toContain("readonly");
   });
 

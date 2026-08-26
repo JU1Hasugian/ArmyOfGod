@@ -10,7 +10,7 @@ import { CodifyService } from "./service.js";
 const directories: string[] = [];
 afterEach(async () => {
   await Promise.all(
-    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
+    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })),
   );
 });
 

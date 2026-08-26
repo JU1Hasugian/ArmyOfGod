@@ -11,7 +11,7 @@ import type { CapabilityScope, PromptObservation } from "./types.js";
 const directories: string[] = [];
 afterEach(async () => {
   await Promise.all(
-    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
+    directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 })),
   );
 });
 
@@ -295,7 +295,7 @@ describe("Codify routing", () => {
     const { context, contract } = await withContract();
     await context.service.reviseContract(
       contract.id,
-      { ...contract.scope, domains: [] },
+      { scope: { ...contract.scope, domains: [] } },
       "operator",
     );
     const observation = await observe(context, PROMPT);
@@ -330,7 +330,7 @@ describe("Codify revocation and escalation", () => {
     const { context, contract } = await withContract();
     const next = await context.service.reviseContract(
       contract.id,
-      { ...contract.scope, domains: [] },
+      { scope: { ...contract.scope, domains: [] } },
       "operator",
     );
     expect(next.version).toBe(2);
@@ -344,7 +344,12 @@ describe("Codify revocation and escalation", () => {
     await expect(
       context.service.reviseContract(
         contract.id,
-        { ...contract.scope, domains: [...contract.scope.domains, "api.pagerduty.com"] },
+        {
+          scope: {
+            ...contract.scope,
+            domains: [...contract.scope.domains, "api.pagerduty.com"],
+          },
+        },
         "operator",
       ),
     ).rejects.toThrow(/recorded evidence/i);
@@ -373,7 +378,7 @@ describe("Codify revocation and escalation", () => {
 
     const next = await context.service.reviseContract(
       contract.id,
-      proposal.proposedScope,
+      { scope: proposal.proposedScope },
       "operator",
     );
     expect(next.version).toBe(2);

@@ -25,8 +25,19 @@ interface TaskFamily {
 
 const FAMILIES: TaskFamily[] = [
   {
-    // Clears both thresholds: 7 runs, 3 distinct users.
-    users: ["user-a", "user-b", "user-c", "user-a", "user-b", "user-c", "user-a"],
+    // Clears both thresholds on the lexical channel alone: the first seven are
+    // near-duplicates, so a reviewer with no embedding endpoint still gets a
+    // populated queue.
+    //
+    // The last five are the same task as the rest of the team would actually
+    // type it — different verbs, different order, different vocabulary. They
+    // only join this cluster when the semantic channel is on, which is the
+    // whole point: the near-duplicate corpus flatters a lexical matcher, and
+    // real usage does not look like that.
+    users: [
+      "user-a", "user-b", "user-c", "user-a", "user-b", "user-c", "user-a",
+      "user-d", "user-e", "user-f", "user-d", "user-e",
+    ],
     prompts: [
       "Generate release notes from the commits in ./repo since v1.4.0 and write them to ./out/RELEASE.md",
       "generate release notes from the commits in ./repo since v1.5.0, write them to ./out/NOTES.md",
@@ -35,6 +46,11 @@ const FAMILIES: TaskFamily[] = [
       "Generate release notes from the commits in ./repo since v2.0.0 and write them to ./out/rel.md",
       "generate release notes from the commits in ./repo since v2.1.1 and write them to ./out/RELEASE.md",
       "Generate release notes from the commits in ./repo since v2.2.0 and write them to ./out/notes.md",
+      "Produce release notes for ./repo covering everything after tag v2.3.0 and save to ./out/RELEASE.md",
+      "Draft the changelog for ./repo covering everything shipped since the v2.4.0 tag; put it in ./out/RELEASE.md",
+      "What shipped in ./repo since v2.5.0? Summarise it as version notes in ./out/RELEASE.md",
+      "I need the changelog for our next release. Use ./repo commits after v2.6.0. Write ./out/RELEASE.md",
+      "Summarise ./repo's commit history since v2.7.0 into release notes at ./out/RELEASE.md",
     ],
     domains: ["github.com"],
     pathsRead: ["repo/CHANGELOG.md", "repo/package.json"],

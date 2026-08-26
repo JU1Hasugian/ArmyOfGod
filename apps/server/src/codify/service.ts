@@ -19,17 +19,36 @@ import type {
   RunnerScopeBinding,
 } from "../types.js";
 import {
-  bestScore,
   canonicalize,
-  cluster,
   clusterKey,
   fingerprint,
 } from "./fingerprint.js";
 import { draftBrief, draftRule } from "./ark-client.js";
+import {
+  bestMatch,
+  clusterByMatch,
+  embedPrompt,
+  type MatchCandidate,
+  type MatchResult,
+  type MatchThresholds,
+} from "./semantic.js";
 import { redact, redactValue } from "./redaction.js";
 import { checkNarrowing, deriveScope, normalizeScope } from "./scope.js";
+import { checkBudget, normalizeBudget, usageForContract } from "./budget.js";
+import { traceForRun, type TraceSummary } from "./trace.js";
+import {
+  buildInstruction,
+  claimTurn,
+  parseDeclaredState,
+  selectParticipant,
+  settleTurn,
+  shouldStop,
+  type CoordinationSession,
+  type SelectionResult,
+} from "./coordination.js";
 import type {
   BrokerMode,
+  BudgetDecision,
   CapabilityObservation,
   CapabilityScope,
   DenialEvent,
@@ -37,11 +56,79 @@ import type {
   PromptObservation,
   RefinementProposal,
   RouteDecision,
+  TaskBudget,
   TaskCandidate,
   TaskContract,
 } from "./types.js";
 
 const now = () => new Date().toISOString();
+
+/** Parallel embedding calls during the backfill pass. */
+const EMBED_BACKFILL_CONCURRENCY = 6;
+
+/** Human-readable channel names for the routing decision's `reason`. */
+const CHANNEL_LABELS: Record<MatchResult["channel"], string> = {
+  fingerprint: "lexical fingerprint",
+  containment: "containment",
+  semantic: "semantic",
+};
+
+/**
+ * A contract's exemplars, reassembled from the three positionally-aligned
+ * arrays it stores.
+ *
+ * `matchCanonicalForms` and `matchEmbeddings` are optional because a contract
+ * promoted by an earlier build has neither. Such a contract still matches on
+ * its fingerprints; it simply has two fewer channels until it is re-promoted.
+ */
+function contractExemplars(contract: TaskContract): MatchCandidate[] {
+  return contract.matchFingerprints.map((fingerprintValue, index) => ({
+    fingerprint: fingerprintValue,
+    canonicalForm: contract.matchCanonicalForms?.[index] ?? "",
+    ...(contract.matchEmbeddings?.[index]
+      ? { embedding: contract.matchEmbeddings[index] as string }
+      : {}),
+  }));
+}
+
+/**
+ * Thresholds for one contract.
+ *
+ * A contract records the thresholds it was promoted under, so re-tuning the
+ * platform defaults does not silently re-scope contracts a human already
+ * approved. Current configuration only applies where a contract is silent.
+ */
+function contractThresholds(contract: TaskContract, config: AppConfig): MatchThresholds {
+  return {
+    fingerprint: contract.matchThreshold,
+    containment: contract.containmentThreshold ?? config.codifyContainmentThreshold,
+    semantic: contract.semanticThreshold ?? config.codifySemanticThreshold,
+  };
+}
+
+/**
+ * One entry per distinct exemplar, keeping the three channels aligned.
+ *
+ * Deduplicated on the fingerprint, matching the previous behaviour, but the
+ * canonical form and embedding have to travel with it rather than being
+ * collapsed into a `Set` of their own.
+ */
+function dedupeExemplars(
+  observations: PromptObservation[],
+): { fingerprint: string; canonicalForm: string; embedding?: string }[] {
+  const seen = new Set<string>();
+  const exemplars: { fingerprint: string; canonicalForm: string; embedding?: string }[] = [];
+  for (const observation of observations) {
+    if (!observation.fingerprint || seen.has(observation.fingerprint)) continue;
+    seen.add(observation.fingerprint);
+    exemplars.push({
+      fingerprint: observation.fingerprint,
+      canonicalForm: observation.canonicalForm,
+      ...(observation.embedding ? { embedding: observation.embedding } : {}),
+    });
+  }
+  return exemplars;
+}
 
 /**
  * Imperative patterns that must never survive into a shared task specification.
@@ -82,6 +169,57 @@ export class CodifyService {
     return this.config.codifyEnabled;
   }
 
+  /**
+   * Give the semantic channel something to work with on observations recorded
+   * without it.
+   *
+   * Two cases produce these: the seeded corpus, which is a pure fixture and
+   * makes no network calls, and any run taken while the embedding endpoint was
+   * unset or unreachable. Both would otherwise be invisible to clustering
+   * forever. Runs on the detection pass rather than at boot, so first start is
+   * not blocked on a model, and is idempotent — an observation is embedded at
+   * most once.
+   */
+  private async backfillEmbeddings(): Promise<void> {
+    if (!this.config.codifySemanticEnabled) return;
+    const pending = this.store
+      .snapshot()
+      .promptObservations.filter(
+        (observation) => !observation.embedding && observation.redactedText,
+      );
+    if (pending.length === 0) return;
+
+    const embedded = new Map<string, string>();
+    // Small fixed concurrency: enough to keep the pass short, low enough not to
+    // trip a rate limit that would leave half the corpus unembedded.
+    const queue = [...pending];
+    await Promise.all(
+      Array.from({ length: EMBED_BACKFILL_CONCURRENCY }, async () => {
+        for (let next = queue.pop(); next; next = queue.pop()) {
+          const packed = await embedPrompt(this.config, next.redactedText);
+          if (packed) embedded.set(next.id, packed);
+        }
+      }),
+    );
+    if (embedded.size === 0) return;
+
+    await this.store.mutate((database) => {
+      for (const observation of database.promptObservations) {
+        const packed = embedded.get(observation.id);
+        if (packed) observation.embedding = packed;
+      }
+    });
+  }
+
+  /** Platform-default thresholds, used wherever no contract owns the decision. */
+  private defaultThresholds(): MatchThresholds {
+    return {
+      fingerprint: this.config.codifyMatchThreshold,
+      containment: this.config.codifyContainmentThreshold,
+      semantic: this.config.codifySemanticThreshold,
+    };
+  }
+
   // ---------------------------------------------------------------- ① redact
 
   /**
@@ -101,6 +239,10 @@ export class CodifyService {
     promotionEligible: boolean;
   }): Promise<PromptObservation> {
     const canonicalForm = canonicalize(input.redactedText);
+    // Best-effort and already past the redaction gate: what is embedded is the
+    // canonical form of redacted text, never the raw prompt. A null here just
+    // means this observation carries no semantic channel.
+    const embedding = await embedPrompt(this.config, input.redactedText);
     const observation: PromptObservation = {
       id: randomUUID(),
       runId: input.runId,
@@ -109,6 +251,7 @@ export class CodifyService {
       redactedText: input.redactedText,
       canonicalForm,
       fingerprint: fingerprint(canonicalForm),
+      ...(embedding ? { embedding } : {}),
       redactionHits: input.redactionHits,
       promotionEligible: input.promotionEligible,
       createdAt: now(),
@@ -138,12 +281,27 @@ export class CodifyService {
       .snapshot()
       .contracts.filter((contract) => contract.status === "active");
 
-    let best: { contract: TaskContract; score: number } | null = null;
+    const prompt: MatchCandidate = {
+      fingerprint: input.observation.fingerprint,
+      canonicalForm: input.observation.canonicalForm,
+      ...(input.observation.embedding ? { embedding: input.observation.embedding } : {}),
+    };
+
+    // Rank by confidence — each channel's score over its own threshold — so
+    // contracts matched on different channels are still comparable.
+    let best: { contract: TaskContract; match: MatchResult } | null = null;
+    let nearest: { contract: TaskContract; match: MatchResult } | null = null;
     for (const contract of contracts) {
-      const score = bestScore(input.observation.fingerprint, contract.matchFingerprints);
-      if (score >= contract.matchThreshold && (!best || score > best.score)) {
-        best = { contract, score };
+      const match = bestMatch(
+        contractExemplars(contract),
+        prompt,
+        contractThresholds(contract, this.config),
+      );
+      if (!nearest || match.confidence > nearest.match.confidence) {
+        nearest = { contract, match };
       }
+      if (!match.matched) continue;
+      if (!best || match.confidence > best.match.confidence) best = { contract, match };
     }
 
     const base = {
@@ -153,7 +311,23 @@ export class CodifyService {
       createdAt: now(),
     };
 
+    // A promoted specialist's own contract. This is the binding the caller
+    // cannot influence: the platform decided which Agent exists for which task
+    // at promotion time, and no prompt changes that.
+    const ownContract = contracts.find((contract) => contract.agentId === input.agentId);
+
     if (input.forceAdHoc) {
+      // Ad-hoc skips *delegation and the brief*, never a specialist's scope.
+      // Letting a request flag drop the scope would make the whole enforcement
+      // story opt-out, which is the same as not having it.
+      if (ownContract) {
+        return this.bindToPrincipal(base, ownContract, {
+          reason:
+            'Ad-hoc requested, so no brief was applied — but this Agent is the specialist for "' +
+            ownContract.name +
+            '", and its scope binds regardless.',
+        });
+      }
       const decision: RouteDecision = {
         ...base,
         decision: "user_override",
@@ -164,14 +338,58 @@ export class CodifyService {
     }
 
     if (!best) {
+      // A near miss is the most useful thing an unmatched decision can carry: a
+      // prompt that scored 0.69 against a 0.70 threshold is a threshold
+      // question, and one that scored 0.02 is not. Without this the operator
+      // cannot tell those apart, and fail-open makes the difference matter.
+      // The fail-open hole, closed. Routing is keyed on attacker-controlled
+      // text, so a determined caller can always miss it; what they must not be
+      // able to do is *gain capability* by missing it. A specialist that fails
+      // to recognise its own task still runs under its own scope — the evasion
+      // now costs the brief and buys nothing.
+      if (ownContract) {
+        return this.bindToPrincipal(base, ownContract, {
+          reason:
+            'No contract matched this prompt, but this Agent is the specialist for "' +
+            ownContract.name +
+            '" and runs under its scope whatever it is asked.',
+          ...(nearest
+            ? {
+                matchScores: {
+                  fingerprint: Number(nearest.match.scores.fingerprint.toFixed(3)),
+                  containment: Number(nearest.match.scores.containment.toFixed(3)),
+                  semantic: Number(nearest.match.scores.semantic.toFixed(3)),
+                },
+              }
+            : {}),
+        });
+      }
+
       const decision: RouteDecision = {
         ...base,
         decision: "unmatched",
         brokerMode: "observe",
+        ...(nearest
+          ? {
+              matchScores: {
+                fingerprint: Number(nearest.match.scores.fingerprint.toFixed(3)),
+                containment: Number(nearest.match.scores.containment.toFixed(3)),
+                semantic: Number(nearest.match.scores.semantic.toFixed(3)),
+              },
+            }
+          : {}),
         reason:
           contracts.length === 0
             ? "No active contract exists yet; observing this run to learn from it."
-            : "No active contract scored above its match threshold.",
+            : nearest
+              ? 'Nothing cleared its threshold. Closest was "' +
+                nearest.contract.name +
+                '" at ' +
+                nearest.match.score.toFixed(3) +
+                " on the " +
+                CHANNEL_LABELS[nearest.match.channel] +
+                " channel."
+              : "No active contract scored above its match threshold.",
       };
       return { decision, summary: this.summarise(decision) };
     }
@@ -181,15 +399,23 @@ export class CodifyService {
       decision: "routed",
       contractId: best.contract.id,
       contractVersion: best.contract.version,
-      score: Number(best.score.toFixed(3)),
+      score: Number(best.match.score.toFixed(3)),
+      matchChannel: best.match.channel,
+      matchScores: {
+        fingerprint: Number(best.match.scores.fingerprint.toFixed(3)),
+        containment: Number(best.match.scores.containment.toFixed(3)),
+        semantic: Number(best.match.scores.semantic.toFixed(3)),
+      },
       brokerMode: "enforce",
       reason:
         'Matched contract "' +
         best.contract.name +
         '" v' +
         best.contract.version +
-        " at similarity " +
-        best.score.toFixed(3) +
+        " on the " +
+        CHANNEL_LABELS[best.match.channel] +
+        " channel at " +
+        best.match.score.toFixed(3) +
         ".",
     };
     return {
@@ -206,6 +432,230 @@ export class CodifyService {
       summary: this.summarise(decision, best.contract),
       delegateToAgentId: best.contract.agentId,
       contract: best.contract,
+    };
+  }
+
+  /**
+   * Bind a turn to the scope of the Agent executing it.
+   *
+   * Deliberately does *not* delegate and does *not* apply the brief: the turn
+   * was not recognised as an instance of the task, so pretending it was would
+   * be worse than useless. What it gets is the specialist's capability
+   * envelope, which is the half that has to hold regardless.
+   */
+  private bindToPrincipal(
+    base: { id: string; runId: string; agentId: string; createdAt: string },
+    contract: TaskContract,
+    extra: {
+      reason: string;
+      matchScores?: { fingerprint: number; containment: number; semantic: number };
+    },
+  ): RoutingResult {
+    const decision: RouteDecision = {
+      ...base,
+      decision: "principal_bound",
+      contractId: contract.id,
+      contractVersion: contract.version,
+      brokerMode: "enforce",
+      ...(extra.matchScores ? { matchScores: extra.matchScores } : {}),
+      reason: extra.reason,
+    };
+    return {
+      decision,
+      binding: {
+        runId: base.runId,
+        mode: "enforce",
+        scope: contract.scope,
+        contractId: contract.id,
+        contractVersion: contract.version,
+      },
+      summary: this.summarise(decision, contract),
+      contract,
+    };
+  }
+
+  // ------------------------------------------------------------- ⑧ budget
+
+  /**
+   * Refuse a turn that would start over its contract's ceiling.
+   *
+   * Throws rather than degrading, and that asymmetry is the same one the rest
+   * of Codify uses: routing fails open because a missed match costs quality,
+   * while enforcement fails closed because a missed limit costs money and
+   * containment. A refusal is recorded as a `DenialEvent` so it lands in the
+   * same evidence stream as an egress block and shows up in the same views.
+   *
+   * Admission-time only. See `budget.ts` for why a Run already in flight is
+   * never interrupted.
+   */
+  async enforceBudget(input: {
+    runId: string;
+    agentId: string;
+    contract: TaskContract;
+  }): Promise<BudgetDecision> {
+    const database = this.store.snapshot();
+    const decision = checkBudget(input.contract, database.contracts, database.runs);
+    if (decision.allowed) return decision;
+
+    const denial: DenialEvent = {
+      id: randomUUID(),
+      runId: input.runId,
+      agentId: input.agentId,
+      contractId: input.contract.id,
+      contractVersion: input.contract.version,
+      kind: "budget",
+      // The limit that fired, not a prompt or a payload: a denial record is
+      // stored and displayed, so nothing caller-controlled goes into it.
+      target: "contract:" + input.contract.name,
+      reason: decision.reason ?? "Budget exhausted.",
+      outcome: "blocked",
+      at: now(),
+    };
+    await this.store.mutate((database) => {
+      database.denialEvents.push(denial);
+    });
+    throw new HttpError(429, decision.reason ?? "Budget exhausted.");
+  }
+
+  // ------------------------------------------------- ⑨ multi-Agent sessions
+
+  /**
+   * Open a shared session over a set of participants.
+   *
+   * Participants are Agent ids, not contract ids, because a session is a
+   * conversation between *Agents* — the contract is what decides which of them
+   * takes a given turn, and an Agent without one is still a legitimate
+   * participant that simply never wins a match.
+   */
+  async createSession(input: {
+    topic: string;
+    goal: string;
+    participantAgentIds: string[];
+    maxTurns: number;
+    createdBy: string;
+    state?: Record<string, string> | undefined;
+  }): Promise<CoordinationSession> {
+    const unique = [...new Set(input.participantAgentIds)];
+    if (unique.length < 2) {
+      throw new HttpError(400, "A coordination session needs at least two participants");
+    }
+    const agents = this.store.snapshot().agents;
+    for (const id of unique) {
+      if (!agents.some((agent) => agent.id === id)) {
+        throw new HttpError(404, "Participant not found: " + id);
+      }
+    }
+    const timestamp = now();
+    const session: CoordinationSession = {
+      id: randomUUID(),
+      topic: input.topic,
+      goal: input.goal,
+      createdBy: input.createdBy,
+      participantAgentIds: unique,
+      turns: [],
+      state: input.state ?? {},
+      maxTurns: input.maxTurns,
+      status: "active",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    await this.store.mutate((database) => {
+      database.coordinationSessions.push(session);
+    });
+    return session;
+  }
+
+  listSessions(): CoordinationSession[] {
+    return this.store
+      .snapshot()
+      .coordinationSessions.sort((left, right) =>
+        right.createdAt.localeCompare(left.createdAt),
+      );
+  }
+
+  getSession(id: string): CoordinationSession {
+    const session = this.store
+      .snapshot()
+      .coordinationSessions.find((entry) => entry.id === id);
+    if (!session) throw new HttpError(404, "Session not found");
+    return session;
+  }
+
+  async stopSession(id: string, reason: string): Promise<CoordinationSession> {
+    await this.store.mutate((database) => {
+      const session = database.coordinationSessions.find((entry) => entry.id === id);
+      if (!session) throw new HttpError(404, "Session not found");
+      // An administrative stop is unconditional, which is the point of having
+      // one: it must work on a session that is mid-turn or already wedged.
+      session.status = "stopped";
+      session.stopReason = reason;
+      session.updatedAt = now();
+    });
+    return this.getSession(id);
+  }
+
+  /**
+   * Decide who takes the next turn, and what they are asked.
+   *
+   * Split out from executing it so the selection is testable on its own and so
+   * the caller — which owns the Agent lifecycle — performs the run.
+   */
+  planTurn(sessionId: string): {
+    session: CoordinationSession;
+    selection: SelectionResult;
+    instruction: string;
+  } | null {
+    const session = this.getSession(sessionId);
+    const stop = shouldStop(session);
+    if (stop.stop) return null;
+
+    const instruction = buildInstruction(session);
+    const database = this.store.snapshot();
+    const canonicalForm = canonicalize(instruction);
+    const selection = selectParticipant({
+      session,
+      instruction: { fingerprint: fingerprint(canonicalForm), canonicalForm },
+      participants: database.agents,
+      contracts: database.contracts,
+      thresholds: this.defaultThresholds(),
+      exemplarsFor: (contract) => contractExemplars(contract),
+    });
+    if (!selection) return null;
+    return { session, selection, instruction };
+  }
+
+  claimTurn(
+    sessionId: string,
+    turn: Parameters<typeof claimTurn>[2],
+  ): ReturnType<typeof claimTurn> {
+    return claimTurn(this.store, sessionId, turn);
+  }
+
+  settleTurn(
+    sessionId: string,
+    index: number,
+    outcome: Parameters<typeof settleTurn>[3],
+  ): Promise<void> {
+    return settleTurn(this.store, sessionId, index, outcome);
+  }
+
+  /** State a participant declared in its output, if any. */
+  declaredState(output: string): Record<string, string> {
+    return parseDeclaredState(output);
+  }
+
+  /** One Run's trace, or null when the Run predates tracing. */
+  traceForRun(runId: string): TraceSummary | null {
+    return traceForRun(this.store, runId);
+  }
+
+  /** Current spend for a contract lineage, for the review UI. */
+  budgetStatus(contractId: string): BudgetDecision {
+    const contract = this.getContract(contractId);
+    const database = this.store.snapshot();
+    return {
+      ...checkBudget(contract, database.contracts, database.runs),
+      usage: usageForContract(contract, database.contracts, database.runs),
     };
   }
 
@@ -228,6 +678,7 @@ export class CodifyService {
       ...(decision.contractVersion ? { contractVersion: decision.contractVersion } : {}),
       ...(contract ? { contractName: contract.name } : {}),
       ...(decision.score !== undefined ? { score: decision.score } : {}),
+      ...(decision.matchChannel ? { matchChannel: decision.matchChannel } : {}),
       ...(contract ? { scope: contract.scope } : {}),
       denials: 0,
       domainsReached: [],
@@ -313,11 +764,15 @@ export class CodifyService {
    * to mint a contract on their own.
    */
   async refreshCandidates(): Promise<TaskCandidate[]> {
+    await this.backfillEmbeddings();
     const database = this.store.snapshot();
     const eligible = database.promptObservations.filter(
       (observation) => observation.promotionEligible && observation.fingerprint,
     );
-    const groups = cluster(eligible, this.config.codifyMatchThreshold);
+    // Clustered under the same rule routing uses, so a promoted cluster is
+    // exactly a cluster that will later match. The lexical channel alone split
+    // real usage into singletons and nothing ever cleared the occurrence floor.
+    const groups = clusterByMatch(eligible, this.defaultThresholds());
     const capabilityByRun = new Map(
       database.capabilityObservations.map((entry) => [entry.runId, entry]),
     );
@@ -395,7 +850,12 @@ export class CodifyService {
    */
   async approveCandidate(
     id: string,
-    input: { name?: string | undefined; scope?: CapabilityScope | undefined; userId: string },
+    input: {
+      name?: string | undefined;
+      scope?: CapabilityScope | undefined;
+      budget?: TaskBudget | undefined;
+      userId: string;
+    },
     createAgent: (agent: {
       name: string;
       description: string;
@@ -455,18 +915,27 @@ export class CodifyService {
       instructions: brief,
     });
 
+    const exemplarSet = dedupeExemplars(observations);
+    const approvedBudget = normalizeBudget(input.budget);
+
     const contract: TaskContract = {
       id: randomUUID(),
       version: 1,
       name,
       agentId: agent.id,
-      matchFingerprints: [
-        ...new Set(observations.map((observation) => observation.fingerprint)),
-      ].filter(Boolean),
+      // Kept positionally aligned across the three arrays: one exemplar per
+      // index, so a contract promoted before the semantic channel existed still
+      // matches on the lexical ones.
+      matchFingerprints: exemplarSet.map((exemplar) => exemplar.fingerprint),
+      matchCanonicalForms: exemplarSet.map((exemplar) => exemplar.canonicalForm),
+      matchEmbeddings: exemplarSet.map((exemplar) => exemplar.embedding),
       matchThreshold: this.config.codifyMatchThreshold,
+      containmentThreshold: this.config.codifyContainmentThreshold,
+      semanticThreshold: this.config.codifySemanticThreshold,
       systemPrompt: brief,
       refinements: [],
       scope: requested,
+      ...(approvedBudget ? { budget: approvedBudget } : {}),
       status: "active",
       createdBy: input.userId,
       createdAt: now(),
@@ -516,6 +985,7 @@ export class CodifyService {
     redactedText: string;
   }): Promise<FeedbackObservation> {
     const canonicalForm = canonicalize(input.redactedText);
+    const feedbackEmbedding = await embedPrompt(this.config, input.redactedText);
     const feedback: FeedbackObservation = {
       id: randomUUID(),
       runId: input.runId,
@@ -526,6 +996,10 @@ export class CodifyService {
       redactedText: input.redactedText,
       canonicalForm,
       fingerprint: fingerprint(canonicalForm),
+      // Corrections are short and rarely share shingles ("more colour" vs "add
+      // some colour please"), so the semantic channel is what actually clusters
+      // them. Absent when embedding is unavailable, as everywhere else.
+      ...(feedbackEmbedding ? { embedding: feedbackEmbedding } : {}),
       createdAt: now(),
     };
     await this.store.mutate((database) => {
@@ -560,7 +1034,7 @@ export class CodifyService {
       const feedback = database.feedbackObservations.filter(
         (entry) => entry.contractId === contractId && entry.fingerprint,
       );
-      for (const members of cluster(feedback, this.config.codifyMatchThreshold)) {
+      for (const members of clusterByMatch(feedback, this.defaultThresholds())) {
         const distinctUsers = new Set(members.map((member) => member.userId)).size;
         if (distinctUsers < this.config.codifyMinRefinementUsers) continue;
         proposals.push({
@@ -726,14 +1200,20 @@ export class CodifyService {
    */
   async reviseContract(
     id: string,
-    scope: CapabilityScope,
+    revision: { scope?: CapabilityScope; budget?: TaskBudget | null },
     userId: string,
   ): Promise<TaskContract> {
     const current = this.getContract(id);
     if (current.status !== "active") {
       throw new HttpError(409, "Only an active contract can be revised");
     }
-    const requested = normalizeScope(scope);
+    if (revision.scope === undefined && revision.budget === undefined) {
+      throw new HttpError(400, "A revision must change the scope, the budget, or both");
+    }
+    // An omitted scope means "leave it alone", which still goes through the
+    // narrowing check against itself — trivially satisfied, and it keeps one
+    // code path rather than two.
+    const requested = normalizeScope(revision.scope ?? current.scope);
     const narrowing = checkNarrowing(normalizeScope(current.scope), requested);
 
     if (!narrowing.ok) {
@@ -757,16 +1237,28 @@ export class CodifyService {
       }
     }
 
+    // `null` clears the budget; `undefined` leaves it as it was. The
+    // distinction matters, because "remove the ceiling" and "do not touch the
+    // ceiling" are different reviewer decisions and both need to be sayable.
+    const nextBudget =
+      revision.budget === undefined
+        ? current.budget
+        : revision.budget === null
+          ? undefined
+          : normalizeBudget(revision.budget);
+
     const next: TaskContract = {
       ...current,
       id: randomUUID(),
       version: current.version + 1,
       scope: requested,
+      ...(nextBudget ? { budget: nextBudget } : {}),
       status: "active",
       createdBy: userId,
       createdAt: now(),
       supersedes: current.id,
     };
+    if (!nextBudget) delete next.budget;
 
     await this.store.mutate((database) => {
       const stored = database.contracts.find((item) => item.id === id);

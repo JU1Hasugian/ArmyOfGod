@@ -43,12 +43,50 @@ const capabilityScopeBody = z.object({
   secrets: z.array(z.string().trim().max(100)).max(50),
 });
 
+/**
+ * A ceiling a reviewer may set. Every field optional: absent is unlimited, not
+ * zero. Capped well above any plausible task so a typo cannot mint an infinite
+ * budget by accident.
+ */
+const budgetBody = z.object({
+  maxTotalTokens: z.number().int().positive().max(100_000_000).optional(),
+  maxRuns: z.number().int().positive().max(100_000).optional(),
+  maxTokensPerRun: z.number().int().positive().max(10_000_000).optional(),
+});
+
 const approveBody = z.object({
   name: z.string().trim().min(1).max(80).optional(),
   scope: capabilityScopeBody.optional(),
+  budget: budgetBody.optional(),
 });
 
-const reviseBody = z.object({ scope: capabilityScopeBody });
+/**
+ * Scope and budget move through the same review gate but under opposite rules:
+ * a scope may only ever be narrowed, while a budget may be raised as well as
+ * lowered. Spend is a decision an operator revisits with new information; a
+ * permission is not, and widening one still needs a recorded denial.
+ */
+const reviseBody = z.object({
+  scope: capabilityScopeBody.optional(),
+  budget: budgetBody.nullable().optional(),
+});
+
+/**
+ * A coordination session. `maxTurns` is required and capped: an unbounded
+ * session is a runaway loop with extra steps, and the ceiling is the only thing
+ * that guarantees it terminates.
+ */
+const createSessionBody = z.object({
+  topic: z.string().trim().min(1).max(120),
+  goal: z.string().trim().min(1).max(4_000),
+  participantAgentIds: z.array(z.string().uuid()).min(2).max(8),
+  maxTurns: z.number().int().min(1).max(40),
+  state: z.record(z.string().max(32), z.string().max(120)).optional(),
+});
+
+const stopSessionBody = z.object({
+  reason: z.string().trim().min(1).max(200).optional(),
+});
 
 /** A reviewer may reword a proposed rule before it becomes part of the brief. */
 const applyRefinementBody = z.object({
@@ -195,6 +233,7 @@ export async function createApp(
     const result = await service.approveCandidate(id, {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.scope !== undefined ? { scope: body.scope } : {}),
+      ...(body.budget !== undefined ? { budget: body.budget } : {}),
       userId: principal(request, config.codifyDefaultUser),
     });
     return reply.code(201).send(result);
@@ -221,7 +260,10 @@ export async function createApp(
     return {
       contract: await service.codify.reviseContract(
         id,
-        body.scope,
+        {
+          ...(body.scope !== undefined ? { scope: body.scope } : {}),
+          ...(body.budget !== undefined ? { budget: body.budget } : {}),
+        },
         principal(request, config.codifyDefaultUser),
       ),
     };
@@ -246,6 +288,67 @@ export async function createApp(
   app.get("/api/codify/denials", async () => ({
     denials: service.codify.listDenials(),
   }));
+
+  /**
+   * One Run as a connected sequence rather than four unrelated record types.
+   * 404 rather than an empty trace: a Run with no spans predates tracing, and
+   * saying so is more useful than showing an empty timeline.
+   */
+  app.get("/api/codify/runs/:id/trace", async (request, reply) => {
+    const { id } = runIdParams.parse(request.params);
+    service.getRun(id);
+    const trace = service.codify.traceForRun(id);
+    if (!trace) {
+      return reply.code(404).send({ error: "No trace was recorded for this Run" });
+    }
+    return { trace };
+  });
+
+  // ⑨ Multi-Agent coordination.
+
+  app.get("/api/codify/sessions", async () => ({
+    sessions: service.codify.listSessions(),
+  }));
+
+  app.post("/api/codify/sessions", async (request, reply) => {
+    const body = createSessionBody.parse(request.body);
+    const session = await service.codify.createSession({
+      ...body,
+      createdBy: principal(request, config.codifyDefaultUser),
+    });
+    return reply.code(201).send({ session });
+  });
+
+  app.get("/api/codify/sessions/:id", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    return { session: service.codify.getSession(id) };
+  });
+
+  /**
+   * One turn per call. A second concurrent call is refused by the turn claim
+   * rather than racing it, which is what makes duplicate turns impossible.
+   */
+  app.post("/api/codify/sessions/:id/advance", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    return { session: await service.advanceSession(id) };
+  });
+
+  app.post("/api/codify/sessions/:id/stop", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    const body = stopSessionBody.parse(request.body ?? {});
+    return {
+      session: await service.codify.stopSession(
+        id,
+        body.reason ?? "Stopped by " + principal(request, config.codifyDefaultUser) + ".",
+      ),
+    };
+  });
+
+  /** Current spend against a contract's ceiling, for the review UI. */
+  app.get("/api/codify/contracts/:id/budget", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    return service.codify.budgetStatus(id);
+  });
 
   // ⑦ Refinements: repeated corrections becoming standing rules.
 

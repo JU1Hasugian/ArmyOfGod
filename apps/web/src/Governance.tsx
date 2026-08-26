@@ -8,9 +8,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "./api";
 import type {
+  Agent,
+  BudgetStatus,
   CapabilityScope,
+  CoordinationSession,
   DenialEvent,
   RefinementProposal,
+  TaskBudget,
   TaskCandidate,
   TaskContract,
 } from "./types";
@@ -225,6 +229,309 @@ function CandidateCard({
   );
 }
 
+/**
+ * Spend against a contract's ceiling.
+ *
+ * Shows the meter even when there is no ceiling, because "unlimited, and this
+ * is what it has cost so far" is the number a reviewer needs in order to decide
+ * what the ceiling should be.
+ */
+function BudgetPanel({
+  contract,
+  onChanged,
+  onError,
+  disabled,
+}: {
+  contract: TaskContract;
+  onChanged: () => void;
+  onError: (message: string) => void;
+  disabled: boolean;
+}) {
+  const [status, setStatus] = useState<BudgetStatus | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(() => {
+    api
+      .budgetStatus(contract.id)
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, [contract.id]);
+
+  useEffect(load, [load]);
+
+  const apply = async (budget: TaskBudget | null) => {
+    setBusy(true);
+    try {
+      await api.reviseContract(contract.id, { budget });
+      setDraft("");
+      onChanged();
+    } catch (error) {
+      onError(error instanceof ApiError ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const ceiling = contract.budget?.maxTotalTokens;
+  const spent = status?.usage.totalTokens ?? 0;
+  const ratio = ceiling ? Math.min(1, spent / ceiling) : 0;
+
+  return (
+    <div className="budget">
+      <span className="eyebrow">Budget</span>
+      <div className="budget-row">
+        <strong>{spent.toLocaleString()}</strong>
+        <span>
+          tokens over {status?.usage.runs ?? 0} run{status?.usage.runs === 1 ? "" : "s"}
+          {ceiling ? " · ceiling " + ceiling.toLocaleString() : " · no ceiling set"}
+        </span>
+      </div>
+      {ceiling ? (
+        <span className="budget-meter">
+          <span
+            className={"budget-fill" + (ratio >= 1 ? " over" : "")}
+            style={{ width: Math.max(2, ratio * 100) + "%" }}
+          />
+        </span>
+      ) : (
+        <p className="budget-none">
+          Unlimited. A runaway task is bounded only by the Runtime timeout.
+        </p>
+      )}
+      {status && !status.allowed && <p className="budget-none">{status.reason}</p>}
+      {contract.status === "active" && (
+        <div className="budget-row">
+          <input
+            type="number"
+            min={1}
+            placeholder="token ceiling"
+            value={draft}
+            disabled={disabled || busy}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <button
+            disabled={disabled || busy || !draft}
+            onClick={() => apply({ maxTotalTokens: Number(draft) })}
+          >
+            Set ceiling
+          </button>
+          {ceiling && (
+            <button disabled={disabled || busy} onClick={() => apply(null)}>
+              Remove
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A shared session, and the turn history that makes the coordination legible.
+ *
+ * The two things this view has to show, per the brief, are which Agent produced
+ * each message and in what order. Both come straight off the turn records — the
+ * coordinator writes them before it runs anything, so what is displayed is what
+ * was decided, not a reconstruction.
+ */
+/**
+ * Open a shared session.
+ *
+ * Participants are picked explicitly rather than inferred from which Agents
+ * have contracts: an Agent without one is a legitimate participant that simply
+ * never wins a match, and hiding that would make the fallback rule invisible.
+ */
+function NewSession({
+  agents,
+  onCreated,
+  onError,
+}: {
+  agents: Agent[];
+  onCreated: () => void;
+  onError: (message: string) => void;
+}) {
+  const [topic, setTopic] = useState("");
+  const [goal, setGoal] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
+  const [maxTurns, setMaxTurns] = useState(4);
+  const [busy, setBusy] = useState(false);
+
+  const toggle = (id: string) =>
+    setSelected((current) =>
+      current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id],
+    );
+
+  const create = async () => {
+    setBusy(true);
+    try {
+      await api.createSession({
+        topic: topic.trim(),
+        goal: goal.trim(),
+        participantAgentIds: selected,
+        maxTurns,
+      });
+      setTopic("");
+      setGoal("");
+      setSelected([]);
+      onCreated();
+    } catch (error) {
+      onError(error instanceof ApiError ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="new-session">
+      <input
+        placeholder="Topic, e.g. the v4 release"
+        value={topic}
+        onChange={(event) => setTopic(event.target.value)}
+        disabled={busy}
+      />
+      <textarea
+        placeholder="What the session should achieve. Each step is routed to whichever specialist matches it."
+        rows={2}
+        value={goal}
+        onChange={(event) => setGoal(event.target.value)}
+        disabled={busy}
+      />
+      <div className="session-participants">
+        {agents.map((agent) => (
+          <label key={agent.id}>
+            <input
+              type="checkbox"
+              checked={selected.includes(agent.id)}
+              onChange={() => toggle(agent.id)}
+              disabled={busy}
+            />
+            {agent.name}
+          </label>
+        ))}
+      </div>
+      <div className="candidate-actions">
+        <label className="turn-cap">
+          Turn ceiling
+          <input
+            type="number"
+            min={1}
+            max={40}
+            value={maxTurns}
+            disabled={busy}
+            onChange={(event) => setMaxTurns(Number(event.target.value))}
+          />
+        </label>
+        <button
+          className="button"
+          disabled={busy || !topic.trim() || !goal.trim() || selected.length < 2}
+          onClick={() => void create()}
+        >
+          Open session
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SessionCard({
+  session,
+  onChanged,
+  onError,
+}: {
+  session: CoordinationSession;
+  onChanged: () => void;
+  onError: (message: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+
+  const act = async (action: () => Promise<unknown>) => {
+    setBusy(true);
+    try {
+      await action();
+      onChanged();
+    } catch (error) {
+      onError(error instanceof ApiError ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <article className="contract-card">
+      <header>
+        <div>
+          <strong>{session.topic}</strong>
+          <p className="candidate-meta">
+            {session.turns.length} of {session.maxTurns} turns ·{" "}
+            {session.participantAgentIds.length} participants · opened by {session.createdBy}
+          </p>
+        </div>
+        <span className={"badge badge-" + session.status}>{session.status}</span>
+      </header>
+
+      <p className="session-goal">{session.goal}</p>
+
+      {session.stopReason && <p className="muted">{session.stopReason}</p>}
+
+      {Object.keys(session.state).length > 0 && (
+        <div className="session-state">
+          <span className="eyebrow">Shared state</span>
+          <ul>
+            {Object.entries(session.state).map(([key, value]) => (
+              <li key={key}>
+                <code>{key}</code> = <code>{value}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {session.turns.length > 0 && (
+        <ol className="session-turns">
+          {session.turns.map((turn) => (
+            <li key={turn.index} className={"session-turn turn-" + turn.status}>
+              <span className="turn-index">{turn.index + 1}</span>
+              <div className="turn-body">
+                <div className="turn-head">
+                  <strong>{turn.agentName}</strong>
+                  {turn.contractName ? (
+                    <span className="turn-contract">under {turn.contractName}</span>
+                  ) : (
+                    <span className="turn-contract unbound">no contract matched</span>
+                  )}
+                </div>
+                <p className="turn-why">{turn.selection}</p>
+                {turn.output && <p className="turn-output">{turn.output.slice(0, 400)}</p>}
+                {turn.error && <p className="turn-error">{turn.error}</p>}
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+
+      {session.status === "active" && (
+        <div className="candidate-actions">
+          <button
+            className="button"
+            disabled={busy}
+            onClick={() => void act(() => api.advanceSession(session.id))}
+          >
+            {busy ? "Running a turn…" : "Take the next turn"}
+          </button>
+          <button
+            className="button ghost"
+            disabled={busy}
+            onClick={() => void act(() => api.stopSession(session.id))}
+          >
+            Stop
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
 function ContractCard({
   contract,
   onChanged,
@@ -239,7 +546,7 @@ function ContractCard({
   const revise = async (scope: CapabilityScope) => {
     setBusy(true);
     try {
-      await api.reviseContract(contract.id, scope);
+      await api.reviseContract(contract.id, { scope });
       onChanged();
     } catch (error) {
       onError(error instanceof ApiError ? error.message : String(error));
@@ -256,7 +563,7 @@ function ContractCard({
         onError("No denial has been recorded for this contract, so there is nothing to escalate.");
         return;
       }
-      await api.reviseContract(contract.id, proposal.proposedScope);
+      await api.reviseContract(contract.id, { scope: proposal.proposedScope });
       onChanged();
     } catch (error) {
       onError(error instanceof ApiError ? error.message : String(error));
@@ -289,6 +596,13 @@ function ContractCard({
           </ul>
         </div>
       )}
+
+      <BudgetPanel
+        contract={contract}
+        onChanged={onChanged}
+        onError={onError}
+        disabled={busy}
+      />
 
       <ScopeView
         scope={contract.scope}
@@ -400,21 +714,26 @@ export default function Governance({ onError }: { onError: (message: string) => 
   const [contracts, setContracts] = useState<TaskContract[]>([]);
   const [denials, setDenials] = useState<DenialEvent[]>([]);
   const [refinements, setRefinements] = useState<RefinementProposal[]>([]);
+  const [sessions, setSessions] = useState<CoordinationSession[]>([]);
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
     try {
-      const [candidateResult, contractResult, denialResult, refinementResult] =
+      const [candidateResult, contractResult, denialResult, refinementResult, sessionResult] =
         await Promise.all([
           api.refreshCandidates(),
           api.contracts(),
           api.denials(),
           api.refreshRefinements(),
+          api.sessions(),
         ]);
+      setAgents((await api.listAgents()).agents);
       setCandidates(candidateResult.candidates);
       setContracts(contractResult.contracts);
       setDenials(denialResult.denials);
       setRefinements(refinementResult.refinements);
+      setSessions(sessionResult.sessions);
     } catch (error) {
       onError(error instanceof ApiError ? error.message : String(error));
     } finally {
@@ -463,6 +782,31 @@ export default function Governance({ onError }: { onError: (message: string) => 
             key={candidate.id}
             candidate={candidate}
             onDecided={() => void refresh()}
+            onError={onError}
+          />
+        ))}
+      </section>
+
+      <section>
+        <h2>
+          Shared sessions <span className="count">{sessions.length}</span>
+        </h2>
+        <NewSession
+          agents={agents}
+          onCreated={() => void refresh()}
+          onError={onError}
+        />
+        {sessions.length === 0 && !loading && (
+          <p className="muted">
+            A shared session routes each step to the specialist whose contract matches it, so
+            no participant ever holds more than its own task&apos;s scope.
+          </p>
+        )}
+        {sessions.map((session) => (
+          <SessionCard
+            key={session.id}
+            session={session}
+            onChanged={() => void refresh()}
             onError={onError}
           />
         ))}

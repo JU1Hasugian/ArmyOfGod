@@ -1421,6 +1421,198 @@ textarea:focus {
   border-left-color: var(--green);
 }
 
+/*
+ * A principal-bound turn is governed but not recognised, so it gets its own
+ * colour rather than borrowing either the matched green or the unmatched grey.
+ * Those are three different states and an operator has to tell them apart.
+ */
+.run-evidence.evidence-principal_bound {
+  border-left-color: var(--purple);
+}
+
+/* -------------------------------------------------------------- run trace -- */
+
+.trace {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.trace-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--purple);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.trace-toggle:hover {
+  color: var(--purple-dark);
+}
+
+.trace-empty {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.trace-body {
+  margin-top: 10px;
+}
+
+.trace-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.trace-meta code {
+  background: #f4f3ef;
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
+.trace-denied {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.trace-spans {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trace-span {
+  display: grid;
+  /* The bar column flexes; every other column is sized to its content so the
+     names and durations stay aligned down the list. */
+  grid-template-columns: minmax(120px, 1.4fr) auto minmax(60px, 2fr) 56px;
+  align-items: center;
+  gap: 10px;
+  font-size: 11.5px;
+  padding: 3px 0;
+}
+
+.span-name {
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.trace-span.span-denied .span-name {
+  color: var(--red);
+  font-weight: 600;
+}
+
+.trace-span.span-error .span-name {
+  color: var(--red);
+}
+
+.span-cat {
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: #f4f3ef;
+  border-radius: 999px;
+  padding: 1px 7px;
+  white-space: nowrap;
+}
+
+.span-cat.cat-policy_decision,
+.span-cat.cat-budget_check {
+  color: var(--purple);
+  background: var(--purple-soft);
+}
+
+.span-cat.cat-egress {
+  color: var(--green);
+  background: #e7f3ee;
+}
+
+.span-bar-cell {
+  display: block;
+  background: #f0efe9;
+  border-radius: 3px;
+  height: 8px;
+  overflow: hidden;
+}
+
+.span-bar {
+  display: block;
+  height: 100%;
+  background: var(--purple);
+  border-radius: 3px;
+}
+
+.trace-span.span-denied .span-bar,
+.trace-span.span-error .span-bar {
+  background: var(--red);
+}
+
+.span-ms {
+  color: var(--muted);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ------------------------------------------------------------- budget -- */
+
+.budget {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.budget-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.budget-row strong {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.budget-meter {
+  height: 6px;
+  border-radius: 3px;
+  background: #f0efe9;
+  overflow: hidden;
+}
+
+.budget-fill {
+  display: block;
+  height: 100%;
+  background: var(--green);
+  border-radius: 3px;
+}
+
+.budget-fill.over {
+  background: var(--red);
+}
+
+.budget-none {
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .evidence-row {
   display: flex;
   align-items: center;
@@ -1584,4 +1776,155 @@ textarea:focus {
 
 .badge-applied {
   color: var(--green);
+}
+
+/* ------------------------------------------------- Codify: shared sessions -- */
+
+.session-goal {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.session-state {
+  margin-top: 10px;
+}
+
+.session-state ul {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  font-size: 12px;
+}
+
+.session-state code {
+  background: #f4f3ef;
+  padding: 1px 5px;
+  border-radius: 5px;
+}
+
+.session-turns {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.session-turn {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 10px;
+  align-items: start;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+
+/* The ordinal is the whole point of the view: which Agent went when. */
+.turn-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--purple-soft);
+  color: var(--purple);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.session-turn.turn-failed .turn-index {
+  background: #fbeaea;
+  color: var(--red);
+}
+
+.turn-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.turn-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+
+.turn-contract {
+  font-size: 11px;
+  color: var(--green);
+  background: #e7f3ee;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.turn-contract.unbound {
+  color: var(--muted);
+  background: #f4f3ef;
+}
+
+.turn-why {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.turn-output {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.turn-error {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--red);
+}
+
+.new-session {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  margin-bottom: 14px;
+}
+
+.session-participants {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 12.5px;
+}
+
+.session-participants label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.turn-cap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.turn-cap input {
+  width: 62px;
 }

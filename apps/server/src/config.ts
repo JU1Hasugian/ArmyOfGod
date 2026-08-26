@@ -42,6 +42,12 @@ const envSchema = z.object({
     .optional(),
   ARK_API_KEY: z.string().optional(),
   ARK_MODEL: z.string().optional(),
+  /**
+   * Endpoint ID for an Ark embedding model, used only by the semantic match
+   * channel. Separate from ARK_MODEL because it is a different model family and
+   * a deployment may reasonably have one without the other.
+   */
+  ARK_EMBED_MODEL: z.string().optional(),
   ARK_BASE_URL: z
     .string()
     .url()
@@ -53,6 +59,21 @@ const envSchema = z.object({
   /** Image for the broker container. Defaults to the Runtime image, which has node. */
   CODIFY_BROKER_IMAGE: z.string().optional(),
   CODIFY_MATCH_THRESHOLD: z.coerce.number().min(0).max(1).default(0.65),
+  /**
+   * Containment required to treat a prompt as an instance of a task, and the
+   * channel that makes routing padding-proof. Set to 0 to disable the channel.
+   */
+  CODIFY_CONTAINMENT_THRESHOLD: z.coerce.number().min(0).max(1).default(0.6),
+  /**
+   * Cosine required for the semantic channel. Inert unless ARK_EMBED_MODEL is
+   * set, because there is nothing to compare against without an embedding.
+   */
+  CODIFY_SEMANTIC_THRESHOLD: z.coerce.number().min(0).max(1).default(0.7),
+  /**
+   * Master switch for the embedding channel. Off under test so the suite never
+   * reaches the network; the lexical channels are exercised on their own there.
+   */
+  CODIFY_SEMANTIC: z.enum(["true", "false"]).optional(),
   CODIFY_MIN_OCCURRENCES: z.coerce.number().int().min(1).default(5),
   CODIFY_MIN_DISTINCT_USERS: z.coerce.number().int().min(1).default(3),
   /**
@@ -137,10 +158,19 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     arkApiKey: env.ARK_API_KEY?.trim() ?? "",
     arkModel: env.ARK_MODEL?.trim() ?? "",
     arkBaseUrl: env.ARK_BASE_URL.replace(/\/+$/, ""),
+    arkEmbedModel: env.ARK_EMBED_MODEL?.trim() || undefined,
     nodeEnv: env.NODE_ENV,
     codifyEnabled: env.CODIFY_ENABLED,
     codifyBrokerImage: env.CODIFY_BROKER_IMAGE?.trim() || env.CONTAINER_RUNTIME_IMAGE,
     codifyMatchThreshold: env.CODIFY_MATCH_THRESHOLD,
+    codifyContainmentThreshold: env.CODIFY_CONTAINMENT_THRESHOLD,
+    codifySemanticThreshold: env.CODIFY_SEMANTIC_THRESHOLD,
+    // Same default shape as codifyDraftingEnabled: on in normal operation, off
+    // under test, and always overridable.
+    codifySemanticEnabled:
+      env.CODIFY_SEMANTIC === undefined
+        ? env.NODE_ENV !== "test"
+        : env.CODIFY_SEMANTIC === "true",
     codifyMinOccurrences: env.CODIFY_MIN_OCCURRENCES,
     codifyMinDistinctUsers: env.CODIFY_MIN_DISTINCT_USERS,
     codifyMinRefinementUsers: env.CODIFY_MIN_REFINEMENT_USERS,

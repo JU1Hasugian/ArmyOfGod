@@ -3,6 +3,8 @@ import { rm } from "node:fs/promises";
 import type { AppConfig } from "./config.js";
 import { agentCodexHome, isArkConfigured, isCodifyActive } from "./config.js";
 import { reapOrphanedBrokers } from "./codify/broker-session.js";
+import { RunTracer } from "./codify/trace.js";
+import type { CoordinationSession } from "./codify/coordination.js";
 import type { CodifyService } from "./codify/service.js";
 import type { CapabilityScope, RouteDecision, TaskContract } from "./codify/types.js";
 import { HttpError, RunCancelledError } from "./errors.js";
@@ -200,6 +202,14 @@ export class AgentService {
     const timestamp = now();
     const runId = randomUUID();
     const userId = options.userId ?? this.config.codifyDefaultUser;
+    // One trace per turn, opened before the first decision so the routing and
+    // budget checks are inside it rather than alongside it.
+    const tracer = new RunTracer(this.store, randomUUID(), runId, agentId);
+    const turn = tracer.open({
+      name: "turn",
+      category: "orchestration",
+      attributes: { addressedAgent: addressed.name, principal: userId },
+    });
 
     // ① The redaction gate. Everything from here down sees the redacted text;
     // only the Runtime receives the raw prompt, and only in memory.
@@ -232,6 +242,52 @@ export class AgentService {
       });
       decision = routing.decision;
       await this.codify.persistRouteDecision(routing.decision);
+      tracer.event({
+        name: "route: " + routing.decision.decision,
+        category: "policy_decision",
+        parentId: turn.id,
+        status: routing.decision.decision === "unmatched" ? "error" : "ok",
+        attributes: {
+          decision: routing.decision.decision,
+          brokerMode: routing.decision.brokerMode,
+          ...(routing.decision.matchChannel ? { channel: routing.decision.matchChannel } : {}),
+          ...(routing.decision.score !== undefined ? { score: routing.decision.score } : {}),
+          ...(routing.decision.contractId ? { contractId: routing.decision.contractId } : {}),
+        },
+      });
+
+      // ⑧ Budget. Checked after routing, because the ceiling belongs to the
+      // contract that governs the turn, and before the Run exists, because a
+      // refused turn must not consume an Agent's one active slot.
+      if (routing.contract) {
+        const budgetSpan = tracer.open({
+          name: "budget check",
+          category: "budget_check",
+          parentId: turn.id,
+          attributes: { contract: routing.contract.name },
+        });
+        try {
+          const budget = await this.codify.enforceBudget({
+            runId,
+            agentId,
+            contract: routing.contract,
+          });
+          budgetSpan.end({
+            attributes: {
+              tokensSpent: budget.usage.totalTokens,
+              runsAdmitted: budget.usage.runs,
+            },
+          });
+        } catch (error) {
+          budgetSpan.end({
+            status: "denied",
+            attributes: { reason: error instanceof Error ? error.message : "refused" },
+          });
+          turn.end({ status: "denied" });
+          await tracer.flush();
+          throw error;
+        }
+      }
       // An unmatched run still goes through the broker, permissively, so it
       // yields the CapabilityObservation that scope derivation feeds on.
       binding = routing.binding ?? this.codify.observeBinding(runId);
@@ -256,6 +312,12 @@ export class AgentService {
             delegatedFromAgentId: agentId,
             delegatedFromAgentName: addressed.name,
           };
+          tracer.event({
+            name: "delegated to " + specialist.name,
+            category: "delegation",
+            parentId: turn.id,
+            attributes: { from: addressed.name, to: specialist.name },
+          });
         }
       }
 
@@ -312,6 +374,8 @@ export class AgentService {
 
     const execution = this.executeRun(agentAtStart, run, {
       rawPrompt: prompt,
+      tracer,
+      turnSpanId: turn.id,
       ...(binding ? { binding } : {}),
       ...(decision ? { decision } : {}),
     });
@@ -367,6 +431,75 @@ export class AgentService {
     });
   }
 
+  /**
+   * Advance a coordination session by exactly one turn.
+   *
+   * One turn per call rather than a background loop. That keeps every
+   * intermediate state in the store where a reviewer can see it, makes the
+   * anti-duplication claim meaningful (a second concurrent call is refused
+   * rather than racing), and means an administrative stop always lands between
+   * turns instead of having to interrupt one.
+   *
+   * The turn runs through the ordinary `sendMessage` path, so it is routed,
+   * budgeted, scoped, brokered and traced exactly as a Playground turn is.
+   * Coordination adds no execution path of its own — which is the property that
+   * makes "each participant runs under its own contract's scope" true rather
+   * than aspirational.
+   */
+  async advanceSession(sessionId: string): Promise<CoordinationSession> {
+    const plan = this.codify.planTurn(sessionId);
+    if (!plan) return this.codify.getSession(sessionId);
+
+    const participant = this.getAgent(plan.selection.agentId);
+    const claimed = await this.codify.claimTurn(sessionId, {
+      agentId: participant.id,
+      agentName: participant.name,
+      ...(plan.selection.contract
+        ? {
+            contractId: plan.selection.contract.id,
+            contractName: plan.selection.contract.name,
+          }
+        : {}),
+      selection: plan.selection.reason,
+      instruction: plan.instruction,
+    });
+
+    try {
+      const { run } = await this.sendMessage(participant.id, plan.instruction, {
+        userId: plan.session.createdBy,
+      });
+      // `sendMessage` returns as soon as the Run is queued; a session turn is
+      // only over when the Run is. Awaiting the execution here is what makes
+      // the turns sequential rather than overlapping.
+      await this.activeExecutions.get(run.agentId)?.catch(() => undefined);
+      const settled = this.getRun(run.id);
+      if (settled.status === "completed") {
+        const output = settled.output ?? "";
+        await this.codify.settleTurn(sessionId, claimed.index, {
+          status: "completed",
+          runId: settled.id,
+          output,
+          state: this.codify.declaredState(output),
+        });
+      } else {
+        await this.codify.settleTurn(sessionId, claimed.index, {
+          status: "failed",
+          runId: settled.id,
+          error: settled.error ?? "The run did not complete.",
+        });
+      }
+    } catch (error) {
+      // A refused turn — a busy Agent, an exhausted budget — is a recorded
+      // failure of that turn, never a crash of the session. The stop rules then
+      // decide whether the session can continue.
+      await this.codify.settleTurn(sessionId, claimed.index, {
+        status: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    return this.codify.getSession(sessionId);
+  }
+
   async systemInfo(): Promise<Record<string, unknown>> {
     return {
       arkConfigured: isArkConfigured(this.config),
@@ -386,6 +519,16 @@ export class AgentService {
       codifyEnabled: this.config.codifyEnabled,
       codifyEnforcing: isCodifyActive(this.config),
       codifyMatchThreshold: this.config.codifyMatchThreshold,
+      codifyContainmentThreshold: this.config.codifyContainmentThreshold,
+      codifySemanticThreshold: this.config.codifySemanticThreshold,
+      // Reported separately from the switch: a reviewer needs to see whether the
+      // semantic channel is actually available, not just whether it is wanted.
+      codifySemanticEnabled: this.config.codifySemanticEnabled,
+      codifySemanticAvailable: Boolean(
+        this.config.codifySemanticEnabled &&
+          this.config.arkApiKey &&
+          this.config.arkEmbedModel,
+      ),
       codifyManagedSecrets: Object.keys(this.config.codifyManagedSecrets),
     };
   }
@@ -443,10 +586,22 @@ export class AgentService {
     run: AgentRun,
     context: {
       rawPrompt: string;
+      tracer: RunTracer;
+      turnSpanId: string;
       binding?: RunnerScopeBinding;
       decision?: RouteDecision;
     },
   ): Promise<void> {
+    const { tracer, turnSpanId } = context;
+    const runtime = tracer.open({
+      name: "runtime turn",
+      category: "sandbox_execution",
+      parentId: turnSpanId,
+      attributes: {
+        provider: this.config.runtimeProvider,
+        ...(context.binding ? { brokerMode: context.binding.mode } : {}),
+      },
+    });
     await this.store.mutate((database) => {
       const storedRun = database.runs.find((item) => item.id === run.id);
       if (storedRun) {
@@ -468,7 +623,41 @@ export class AgentService {
           decision: context.decision,
           evidence: captured,
         });
-        await this.codify.refreshCandidates();
+        // The broker's own JSONL is the source of truth for what happened at
+        // the boundary; the trace only gives those facts an ordering and a
+        // parent, so a reviewer reads one sequence instead of two logs.
+        for (const event of captured.brokerEvents ?? []) {
+          if (event.type === "denial") {
+            tracer.event({
+              name: "denied " + (event.target ?? event.host ?? "unknown"),
+              category: "egress",
+              parentId: runtime.id,
+              status: "denied",
+              at: event.at,
+              attributes: {
+                kind: event.kind ?? "egress",
+                ...(event.reason ? { reason: event.reason } : {}),
+              },
+            });
+          } else if (event.type === "egress" && event.host) {
+            tracer.event({
+              name: "egress " + event.host,
+              category: "egress",
+              parentId: runtime.id,
+              at: event.at,
+              attributes: { host: event.host, ...(event.port ? { port: event.port } : {}) },
+            });
+          } else if (event.type === "model_call") {
+            tracer.event({
+              name: "model call",
+              category: "model_call",
+              parentId: runtime.id,
+              at: event.at,
+              status: event.status && event.status >= 400 ? "error" : "ok",
+              ...(event.status ? { attributes: { status: event.status } } : {}),
+            });
+          }
+        }
       } catch {
         /* Evidence must never change the outcome the caller already saw. */
       }
@@ -512,10 +701,21 @@ export class AgentService {
         agent.lastError = null;
         agent.updatedAt = completedAt;
       });
+      runtime.end({
+        attributes: {
+          ...(result.usage?.inputTokens ? { inputTokens: result.usage.inputTokens } : {}),
+          ...(result.usage?.outputTokens ? { outputTokens: result.usage.outputTokens } : {}),
+        },
+      });
       await recordEvidence();
+      tracer.open({ name: "completed", category: "orchestration", parentId: turnSpanId }).end();
     } catch (error) {
       const completedAt = now();
       const cancelled = error instanceof RunCancelledError;
+      runtime.end({
+        status: cancelled ? "ok" : "error",
+        attributes: { outcome: cancelled ? "cancelled" : "failed" },
+      });
       const message = error instanceof Error ? error.message : String(error);
       await this.store.mutate((database) => {
         const storedRun = database.runs.find((item) => item.id === run.id);
@@ -534,6 +734,11 @@ export class AgentService {
         }
       });
       await recordEvidence();
+    } finally {
+      // Closes the turn span and writes every span in one mutation. Swallows
+      // its own failures: a Run that finished must not be reported otherwise
+      // because its trace could not be stored.
+      await tracer.flush();
     }
   }
 

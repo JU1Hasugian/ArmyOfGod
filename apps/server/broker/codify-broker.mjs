@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 /**
  * Codify Broker — the single egress path for a scoped Agent Runtime container.
  *

@@ -15,7 +15,34 @@ const emptyDatabase = (): Database => ({
   denialEvents: [],
   feedbackObservations: [],
   refinementProposals: [],
+  traceSpans: [],
+  coordinationSessions: [],
 });
+
+/**
+ * Replace the store file atomically.
+ *
+ * `rename` over an existing path is atomic, but it is not always immediately
+ * *permitted*: a host that holds a transient handle on the target - a scanner,
+ * an indexer, a reader that has not closed yet - surfaces a short-lived EPERM
+ * or EBUSY instead. `rename` is still the right primitive, so retry it briefly
+ * rather than falling back to a non-atomic copy. Anything that is not one of
+ * those transient codes, or that outlasts the budget, is rethrown.
+ */
+const TRANSIENT_RENAME_ERRORS = new Set(["EPERM", "EACCES", "EBUSY"]);
+
+async function renameWithRetry(from: string, to: string, attempts = 6): Promise<void> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      await rename(from, to);
+      return;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code ?? "";
+      if (attempt >= attempts - 1 || !TRANSIENT_RENAME_ERRORS.has(code)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 20 * (attempt + 1)));
+    }
+  }
+}
 
 /**
  * Codify's collections were added after the baseline shipped, so a database
@@ -33,6 +60,8 @@ function withCodifyCollections(parsed: Database): Database {
     candidates: parsed.candidates ?? empty.candidates,
     contracts: parsed.contracts ?? empty.contracts,
     routeDecisions: parsed.routeDecisions ?? empty.routeDecisions,
+    traceSpans: parsed.traceSpans ?? empty.traceSpans,
+    coordinationSessions: parsed.coordinationSessions ?? empty.coordinationSessions,
     denialEvents: parsed.denialEvents ?? empty.denialEvents,
     feedbackObservations: parsed.feedbackObservations ?? empty.feedbackObservations,
     refinementProposals: parsed.refinementProposals ?? empty.refinementProposals,
@@ -85,6 +114,6 @@ export class JsonStore {
       encoding: "utf8",
       mode: 0o600,
     });
-    await rename(temporaryPath, this.filePath);
+    await renameWithRetry(temporaryPath, this.filePath);
   }
 }

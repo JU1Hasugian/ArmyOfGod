@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, setAuthToken, setPrincipal } from "./api";
 import Governance from "./Governance";
-import type { Agent, AgentRun, Message, SystemInfo } from "./types";
+import type { Agent, AgentRun, MatchChannel, Message, RunTrace, SystemInfo } from "./types";
 
 /** Mock principals, as the brief permits. Authorization is server-side. */
 const PRINCIPALS = ["user-a", "user-b", "user-c", "operator"];
@@ -43,6 +43,98 @@ function Spinner() {
  * What Codify decided about one turn, and what the enforcement boundary did
  * about it. Rendered from data the server recorded, never inferred here.
  */
+/**
+ * Name the channel that carried the match.
+ *
+ * Worth the words on screen: "containment 1.00" on a prompt whose fingerprint
+ * scored 0.36 is the platform saying it recognised a padded task, and that is
+ * the difference between a governed run and an unenforced one.
+ */
+function channelLabel(channel: MatchChannel | undefined): string {
+  if (channel === "containment") return "containment";
+  if (channel === "semantic") return "semantic match";
+  return "similarity";
+}
+
+/**
+ * One Run's trace, fetched on demand.
+ *
+ * Behind a disclosure rather than always open: the trace is the thing you go
+ * looking for when a Run did something surprising, and pre-fetching one per
+ * message would put a request per Run on every render of the transcript.
+ */
+function RunTraceView({ runId }: { runId: string }) {
+  const [trace, setTrace] = useState<RunTrace | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open || trace || error) return;
+    let cancelled = false;
+    api
+      .runTrace(runId)
+      .then((result) => {
+        if (!cancelled) setTrace(result.trace);
+      })
+      .catch((cause: unknown) => {
+        if (!cancelled) {
+          setError(cause instanceof ApiError ? cause.message : "Could not load the trace");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, runId, trace, error]);
+
+  // The longest span sets the scale, so every bar is read against the same
+  // baseline and the slow step is the wide one.
+  const longest = trace
+    ? Math.max(1, ...trace.spans.map((span) => span.durationMs ?? 0))
+    : 1;
+
+  return (
+    <div className="trace">
+      <button className="trace-toggle" onClick={() => setOpen((value) => !value)}>
+        {open ? "Hide trace" : "Show trace"}
+        {trace ? " · " + trace.spanCount + " spans" : ""}
+      </button>
+      {open && error && <p className="trace-empty">{error}</p>}
+      {open && !error && !trace && <p className="trace-empty">Loading…</p>}
+      {open && trace && (
+        <div className="trace-body">
+          <div className="trace-meta">
+            <code>{trace.traceId.slice(0, 8)}</code>
+            <span>{trace.durationMs} ms</span>
+            {trace.denied > 0 && <span className="trace-denied">{trace.denied} denied</span>}
+          </div>
+          <ol className="trace-spans">
+            {trace.spans.map((span) => (
+              <li key={span.id} className={"trace-span span-" + span.status}>
+                <span
+                  className="span-name"
+                  style={{ paddingLeft: (span.parentId ? 14 : 0) + "px" }}
+                >
+                  {span.name}
+                </span>
+                <span className={"span-cat cat-" + span.category}>{span.category}</span>
+                <span className="span-bar-cell">
+                  <span
+                    className="span-bar"
+                    style={{
+                      width: Math.max(2, ((span.durationMs ?? 0) / longest) * 100) + "%",
+                    }}
+                  />
+                </span>
+                <span className="span-ms">{span.durationMs ?? 0} ms</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RunEvidence({ run }: { run: AgentRun }) {
   const codify = run.codify;
   if (!codify) return null;
@@ -52,10 +144,18 @@ function RunEvidence({ run }: { run: AgentRun }) {
         (codify.contractName ?? "a contract") +
         " v" +
         codify.contractVersion +
-        (codify.score !== undefined ? " · similarity " + codify.score : "")
-      : codify.decision === "user_override"
-        ? "Ad-hoc by explicit request · observed, not enforced"
-        : "No contract matched · observed, not enforced";
+        (codify.score !== undefined
+          ? " · " + channelLabel(codify.matchChannel) + " " + codify.score
+          : "")
+      : codify.decision === "principal_bound"
+        ? "Scope bound to this specialist · " +
+          (codify.contractName ?? "its contract") +
+          " v" +
+          codify.contractVersion +
+          " · the prompt was not recognised, the permissions still apply"
+        : codify.decision === "user_override"
+          ? "Ad-hoc by explicit request · observed, not enforced"
+          : "No contract matched · observed, not enforced";
 
   return (
     <aside className={"run-evidence evidence-" + codify.decision}>
@@ -105,6 +205,7 @@ function RunEvidence({ run }: { run: AgentRun }) {
           never contacted.
         </div>
       )}
+      <RunTraceView runId={run.id} />
     </aside>
   );
 }
