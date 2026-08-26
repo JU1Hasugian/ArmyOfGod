@@ -246,7 +246,7 @@ transcripts or rewrite the generated `config.toml`. Codify gives each Agent its
 own directory. Session resume is unaffected, because a thread only ever resumes
 inside the Agent that created it.
 
-### Why promotion no longer waits for a person
+### Why promotion is automatable, and why it still ships off
 
 The original design gated promotion on human approval. That was the wrong shape,
 for a reason worth stating plainly: **promotion does not grant capability.**
@@ -293,6 +293,35 @@ genuinely widens reach. The withheld secret is recorded as a `DenialEvent`, so
 the evidence for granting it accumulates in the same stream an egress refusal
 lands in, and the escalation path already knows how to turn recorded denials into
 a proposed widening.
+
+#### What the measurement changed
+
+The argument above is sound as far as it goes, and over a 100-prompt stream
+auto-promotion behaved perfectly: promotion at the threshold, all fifty later
+wordings routed, nothing spurious. That test was too small.
+
+Over **2,247 prompts** with realistic traffic it produced **36 contracts where 12
+tasks existed.** Twenty-three further clusters formed out of ordinary chatter
+that genuinely recurs - *"send only the season number"* (69 prompts),
+*"translate this dialect"* (55), *"generate an etsy title"* (14). Each would mint
+a durable Agent with a workspace, a session and a derived scope.
+
+Routing stayed correct throughout - 300/300 governed prompts, nothing misrouted -
+so this is not an accuracy failure. It is **proliferation**, and the control the
+safety story leaned on does not restrain it. The distinct-user floor was designed
+against *one person* repeating a prompt; it is silent when *many people* ask
+similar things, which is precisely what those clusters are.
+
+The reviewer model cannot close it either. It judges whether a scope fits its
+task, not whether the thing should be a task at all - and that second question is
+about what an organisation wants to institutionalise. No amount of observation
+answers it.
+
+So `CODIFY_AUTO_PROMOTE` ships **off**. The machinery is built, tested and
+documented, and the finding that argues against enabling it is recorded beside
+it. The human stays for the judgement a human is actually better at, and the
+reviewer model removes the part they were worst at - checking that a derived
+scope is plausible.
 
 ### The narrow-only rule
 

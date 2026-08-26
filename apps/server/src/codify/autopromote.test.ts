@@ -125,8 +125,10 @@ describe("the auto-grant clamp", () => {
 });
 
 describe("auto-promotion", () => {
-  it("does nothing when the switch is off", async () => {
-    const context = await makeService({ CODIFY_AUTO_PROMOTE: "false" });
+  it("does nothing when the switch is off, which is the default", async () => {
+    // Off by default: measured over 2,247 prompts, auto-promotion produced 36
+    // contracts where 12 tasks existed. See the note on the config field.
+    const context = await makeService();
     await seed(context);
     const result = await context.service.autoPromote(makeAgent);
     expect(result.promoted).toEqual([]);
@@ -138,7 +140,7 @@ describe("auto-promotion", () => {
     // hold the candidate rather than wave it through: this is the one model
     // call in Codify that fails closed, because failing open would auto-grant
     // precisely the cases nobody looked at.
-    const context = await makeService();
+    const context = await makeService({ CODIFY_AUTO_PROMOTE: "true" });
     await seed(context);
     const result = await context.service.autoPromote(makeAgent);
     expect(result.promoted).toEqual([]);
@@ -148,7 +150,7 @@ describe("auto-promotion", () => {
   });
 
   it("leaves a held candidate promotable by a person", async () => {
-    const context = await makeService();
+    const context = await makeService({ CODIFY_AUTO_PROMOTE: "true" });
     await seed(context);
     await context.service.autoPromote(makeAgent);
     const candidate = context.service.listCandidates()[0];
@@ -162,7 +164,7 @@ describe("auto-promotion", () => {
   });
 
   it("never promotes a candidate that failed the distinct-user floor", async () => {
-    const context = await makeService();
+    const context = await makeService({ CODIFY_AUTO_PROMOTE: "true" });
     for (let index = 0; index < 15; index += 1) {
       const runId = "00000000-0000-4000-8000-" + String(900 + index).padStart(12, "0");
       await context.service.recordPromptObservation({

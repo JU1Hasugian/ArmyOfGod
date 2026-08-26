@@ -93,16 +93,34 @@ const envSchema = z.object({
    * Promote a candidate the moment it clears its thresholds, with no human in
    * the loop.
    *
-   * Defensible because promotion does not *grant* capability — the runs it is
-   * derived from already reached those hosts and wrote those paths, ad hoc and
-   * unbounded. The derived scope IS that behaviour, so promoting narrows rather
-   * than widens. What review is actually protecting against is *laundering*:
-   * turning one bad run into a standing allowance for people who never asked.
-   * `CODIFY_AUTO_GRANT_SECRETS` is where that risk concentrates, so it is off.
+   * Off by default, and the reason is measured rather than cautious.
+   *
+   * The argument for switching it on is still sound as far as it goes:
+   * promotion does not *grant* capability, because the runs it is derived from
+   * already reached those hosts and wrote those paths, unbounded. Over a
+   * 100-prompt stream it behaved perfectly — promotion at the threshold, every
+   * later wording routed, nothing spurious.
+   *
+   * That test was too small. Over 2,247 prompts with realistic traffic it
+   * promoted **36 contracts where 12 tasks existed**: 23 further clusters formed
+   * out of ordinary chatter that genuinely recurs — "send only the season
+   * number", "translate this dialect", "generate an etsy title" — each of which
+   * would mint a durable Agent with a workspace and a derived scope.
+   *
+   * Routing stayed correct throughout (300/300, nothing misrouted), so this is
+   * not an accuracy failure. It is proliferation, and the control the safety
+   * story leaned on does not restrain it: the distinct-user floor was designed
+   * against *one person* repeating a prompt, and is silent when *many people*
+   * ask similar things — which is exactly what those clusters are.
+   *
+   * A reviewer model cannot close it either, because it judges whether a scope
+   * fits its task, not whether the thing should be a task at all. That last
+   * question is about what an organisation wants to institutionalise, and no
+   * amount of observation answers it. It is the part worth a human.
    */
   CODIFY_AUTO_PROMOTE: z
     .enum(["true", "false"])
-    .default("true")
+    .default("false")
     .transform((value) => value === "true"),
   /**
    * Whether an auto-promoted contract may receive credentials it was observed
