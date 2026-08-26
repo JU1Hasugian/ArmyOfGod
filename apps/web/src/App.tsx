@@ -102,11 +102,30 @@ function RunTraceView({ runId }: { runId: string }) {
 
   return (
     <div className="trace">
-      <button className="trace-toggle" onClick={() => setOpen((value) => !value)}>
+      {/*
+        Reopening retries. A trace is only queryable once the turn flushes its
+        spans, so a panel opened while the Run is still going gets a 404 — and
+        without clearing the error here that "no trace" verdict outlived the
+        Run that went on to record six spans.
+      */}
+      <button
+        className="trace-toggle"
+        onClick={() =>
+          setOpen((value) => {
+            if (!value) setError(null);
+            return !value;
+          })
+        }
+      >
         {open ? "Hide trace" : "Show trace"}
         {trace ? " · " + trace.spanCount + " spans" : ""}
       </button>
-      {open && error && <p className="trace-empty">{error}</p>}
+      {open && error && (
+        <p className="trace-empty">
+          {error} The spans are written when the turn finishes — close and reopen to
+          retry.
+        </p>
+      )}
       {open && !error && !trace && <p className="trace-empty">Loading…</p>}
       {open && trace && (
         <div className="trace-body">

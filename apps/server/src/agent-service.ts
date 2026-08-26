@@ -1088,6 +1088,9 @@ export class AgentService {
       });
       await recordEvidence();
       tracer.open({ name: "completed", category: "orchestration", parentId: turnSpanId }).end();
+      // Close the root explicitly. `flush` closes anything still open as an
+      // error, which is right for a crash and wrong for the ordinary path.
+      tracer.close(turnSpanId, { status: "ok" });
     } catch (error) {
       const completedAt = now();
       const cancelled = error instanceof RunCancelledError;

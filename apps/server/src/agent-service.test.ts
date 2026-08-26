@@ -228,6 +228,34 @@ describe("Agent lifecycle", () => {
     expect(service.getRun(other.run.id).agentId).toBe(desk.id);
   });
 
+  /**
+   * `flush` closes anything still open as an error, which is right for a crash
+   * and wrong for the ordinary path. The root turn span was never closed on
+   * success, so every completed Run carried a failed root: the timeline said
+   * the Run had crashed while listing its own completion underneath.
+   */
+  it("traces a successful Run without marking its root span failed", async () => {
+    const { service, store } = await makeServiceWithStore();
+    const agent = await service.createAgent({ name: "Traced" });
+    const { run } = await service.sendMessage(agent.id, "do the thing", { userId: "user-a" });
+    await expect.poll(() => service.getRun(run.id).status).toBe("completed");
+
+    await expect
+      .poll(() => store.snapshot().traceSpans.filter((span) => span.runId === run.id).length)
+      .toBeGreaterThan(0);
+    const spans = store.snapshot().traceSpans.filter((span) => span.runId === run.id);
+    const root = spans.find((span) => span.name === "turn");
+
+    expect(root).toBeDefined();
+    expect(root?.status).toBe("ok");
+    expect(root?.endedAt).toBeDefined();
+    // Every span is closed. An `unmatched` route span is deliberately `error` —
+    // routing failing open is worth flagging — so the assertion is about spans
+    // being terminated, not about none of them carrying a status.
+    expect(spans.every((span) => span.endedAt !== undefined)).toBe(true);
+    expect(spans.find((span) => span.name === "completed")?.status).toBe("ok");
+  });
+
   it("atomically accepts only one concurrent run per Agent", async () => {
     let finish!: (result: RunnerResult) => void;
     const pending = new Promise<RunnerResult>((resolve) => {

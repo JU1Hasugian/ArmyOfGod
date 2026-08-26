@@ -97,6 +97,34 @@ export class RunTracer {
   }
 
   /**
+   * Close a span by id, for a caller that holds the id but not the handle.
+   *
+   * The turn span is opened where the request arrives and finishes where the
+   * Run settles, which is a different method — and only the id travels between
+   * them. Without this the turn span was never closed on the success path, so
+   * `flush` treated it as an unterminated span and marked it `error`: every
+   * completed Run carried a failed root span, and the timeline said a Run had
+   * crashed while listing its own successful completion underneath.
+   */
+  close(
+    spanId: string,
+    outcome?: {
+      status?: TraceSpan["status"];
+      attributes?: Record<string, string | number | boolean>;
+    },
+  ): void {
+    const span = this.spans.get(spanId);
+    if (!span || span.endedAt) return;
+    const endedAt = now();
+    span.endedAt = endedAt;
+    span.durationMs = Math.max(0, Date.parse(endedAt) - Date.parse(span.startedAt));
+    if (outcome?.status) span.status = outcome.status;
+    if (outcome?.attributes) {
+      span.attributes = { ...(span.attributes ?? {}), ...outcome.attributes };
+    }
+  }
+
+  /**
    * Record something that already happened and has no duration of its own —
    * a routing decision, a refusal at the broker.
    */
