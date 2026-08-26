@@ -948,6 +948,12 @@ and the one-off work left alone.
 - **"Fine-tuning" here means sharpening the brief, not training weights.** No
   model weights are updated. The consistency gain comes from the distilled brief
   and the learned rules.
+- **Consistency is measured on one task, and it is consistency of *structure*.**
+  The governed arm produced one document shape across three runs where the
+  ad-hoc control produced four across four (engineering log §9) — but the
+  governed runs also covered *less*, because the brief pinned scope as well as
+  structure. Consistency and completeness are different axes and only the first
+  is measured.
 - **Codify guarantees a visible, versioned brief and bounded capability — not
   correctness.**
 - **The filesystem boundary enforces writes, not reads.** The workspace is

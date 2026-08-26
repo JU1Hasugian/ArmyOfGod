@@ -451,6 +451,8 @@ boundary that is not applied.
 | `planner.live.test.ts` | **8/8 split, 8/8 both halves, 8/8 ordering, 0/8 false splits** over four runs | `ARK_API_KEY` + `ARK_MODEL`; see §10 |
 | live-demo (49 checks) | the policy **binds** — real Docker, real Codex, derived scope enforced, `ab.chatgpt.com` refused, budget 429, trace, two specialists never sharing a scope | scratch harness, needs a container engine |
 | office run (1,748 prompts) | the **learning loop** from an empty store | scratch harness |
+| baseline acceptance (§1.3) | the Starter Kit still works: create, run, follow-up on the **same Codex session**, stop/restart with the workspace and conversation intact, edit, delete | by hand against `npm run poc` |
+| enforcement, live | all four denial kinds refused on the container path with Codex's own sandbox off | `npm run poc` + the demo script |
 
 **Headline numbers** (all in `docs/SEMANTIC-ROUTING.md`):
 
@@ -460,6 +462,12 @@ boundary that is not applied.
   **0/788** one-off requests routed, **0** contracts holding two families' egress.
 - Splitting a compound request: **8/8** split with both halves kept and the
   ordering right, **0/8** false splits on single tasks, stable over four runs.
+- Consistency, on one task: the governed arm produced **1 distinct document
+  structure across 3 runs**; the ad-hoc control produced **4 across 4**. The
+  control was verified as `user_override` on every run rather than assumed.
+- All four denial kinds observed live on the container path — **egress**
+  (`open.er-api.com`), **path** (`finance/archive-copy.md`, `EROFS`), **budget**
+  (HTTP 429 at admission), **secret** (`GITHUB_TOKEN` withheld by the clamp).
 - Datasets: `google-research-datasets/paws`, `SetFit/qqp`,
   `agentlans/allenai-WildChat`, `fka/prompts.chat`, `bigcode/bigcodebench`,
   `princeton-nlp/SWE-bench`.
@@ -502,14 +510,43 @@ of the acceptance checklist.
 The owner must do it: **Settings → General → Danger Zone → Change visibility**.
 Nothing else in the submission compensates for this.
 
-**Unmeasured — consistency.** The claim that a specialist's output is more
-predictable than a general agent's still rests on one hand-picked A/B. Three
-attempts to measure it properly were invalidated (§6). The ad-hoc control
-happened to produce identical structure across 4 runs, so on that task there was
-no variance to close. If you attempt it again, the trap that invalidated every
-previous attempt is that the control arm gets **delegated back to the specialist
-it is being compared against** — `forceAdHoc: true` is the fix, and it must be
-verified in the resulting `RouteDecision`, not assumed.
+**Measured at last — consistency.** Three previous attempts were invalidated,
+every one of them by the control arm being delegated back to the specialist it
+was being compared against. This one verified `user_override` on the
+`RouteDecision` of all four control runs rather than assuming `forceAdHoc` had
+taken, and compared the **file** each run produced rather than the chat message
+about it — the other two mistakes §6 records.
+
+Task: summarise the incident timeline in `./incidents` into a postmortem.
+Metric: the set of level-2 headings, case and punctuation normalised.
+
+| arm | runs | distinct structures | pairwise agreement |
+|---|---|---|---|
+| governed | 3 | **1** | **3/3** |
+| ad hoc | 4 | **4** | **0/6** |
+
+Every governed run produced *Summary · Timeline · Impact · Root Cause · Action
+Items*. No two ad-hoc runs agreed on anything: *Common Patterns*, *Takeaways*,
+*Systemic Observations*, and *Action Items* with the incidents renumbered as
+"Incident 1 / Incident 2". Four runs, four documents.
+
+Three caveats, because the result is only worth what it is honestly worth.
+
+**n=3 in the governed arm, and the reason is itself a finding.** The harness
+asked each run for a distinct output path so the runs could not overwrite each
+other. Two of the four governed runs **ignored the filename in the request and
+wrote to the path in their brief** instead. The brief outweighed the request —
+which is exactly the mechanism under test, and it means a harness cannot pin the
+output path of a governed run by asking.
+
+**The arms did not cover the same ground.** The governed runs summarised one
+incident; the ad-hoc runs covered both. The brief pinned scope as well as
+structure, so some of the consistency was bought by narrowing what the task
+attempts. Consistency and completeness are not the same axis, and this measures
+the first.
+
+**One task, one corpus.** A floor on confidence, not a population estimate — the
+same caveat the split measurement carries.
 
 **Measured, with a caveat of scope.** Split quality is now 8/8 / 8/8 / 8/8 with
 0/8 false splits across four runs (§3, `docs/SEMANTIC-ROUTING.md` §4d) — but on
