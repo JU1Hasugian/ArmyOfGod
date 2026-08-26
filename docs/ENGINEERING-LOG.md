@@ -185,8 +185,11 @@ real compound request *correctly*. The parse and rejection rules are unit-tested
 without a network, the wiring is tested with the call stubbed, and every
 rejection path returns the prompt unsplit — but the accuracy of the split itself
 is an open number, and it is the number that decides whether the model call earns
-its place. The harness has the same shape as the §4c generated-probe work and
-needs an `ARK_API_KEY` in the environment.
+its place. The harness is in the repo — `planner.live.test.ts`, 8 compound probes
+with constructed ground truth and 8 single-task probes, three of them written to
+look compound — and skips without `ARK_API_KEY` + `ARK_MODEL`, like the other
+live test. Running it and recording the table in `docs/SEMANTIC-ROUTING.md` §4d
+is the single highest-value thing left to do.
 
 ---
 
@@ -288,8 +291,9 @@ re-cluster the whole store. One cause, both symptoms.
 
 | test | proves | how to run |
 |---|---|---|
-| `npm run check` | 222 tests, typecheck, both builds | `npm run check` |
+| `npm run check` | 224 tests, typecheck, both builds | `npm run check` |
 | `semantic.live.test.ts` | recognition against a real Ark endpoint | set `ARK_API_KEY` + `ARK_EMBED_MODEL`; skips otherwise |
+| `planner.live.test.ts` | how well a compound request is split, and how often a single task is split by mistake | set `ARK_API_KEY` + `ARK_MODEL`; skips otherwise |
 | live-demo (49 checks) | the policy **binds** — real Docker, real Codex, derived scope enforced, `ab.chatgpt.com` refused, budget 429, trace, two specialists never sharing a scope | scratch harness, needs a container engine |
 | office run (1,748 prompts) | the **learning loop** from an empty store | scratch harness |
 

@@ -579,7 +579,7 @@ from §11.
 ## 9. Tests
 
 `npm run check` runs typecheck, the full vitest suite, and both production
-builds. **222 tests across 26 files** (one skipped without an embedding endpoint).
+builds. **224 tests across 27 files** (three skipped without live credentials).
 
 | Area | What it proves |
 |---|---|

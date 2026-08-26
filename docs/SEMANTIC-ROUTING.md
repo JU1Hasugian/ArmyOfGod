@@ -635,14 +635,31 @@ are the part that has to be right.
 
 ### What is not yet measured
 
-**Split quality against the live endpoint has not been measured.** The parse and
-rejection rules are tested deterministically, and the wiring is tested with the
-model call stubbed — but how often the model splits a real compound request
+**Split quality against the live endpoint has not been measured yet.** The parse
+and rejection rules are tested deterministically, and the wiring is tested with
+the model call stubbed — but how often the model splits a real compound request
 *correctly* is an open number, and it is the number that decides whether this
-feature earns its model call. The harness to produce it is the same shape as
-§4c: generate compound prompts from known task pairs, split them, and check each
-fragment routes to the contract it came from. It needs an `ARK_API_KEY` in the
-environment to run.
+feature earns its model call.
+
+The harness exists and is in the repo: `planner.live.test.ts`, skipped without
+credentials in the same way as `semantic.live.test.ts`. Ground truth is
+constructed rather than judged — each of 8 compound probes is built by
+concatenating two task descriptions the file itself writes, so the correct split
+is known before the model sees it, and a fragment is attributed by which half it
+lexically overlaps more. It reports three numbers: how many compound requests
+were split, how many kept **both** halves, and how many got the *ordering* right
+(a probe joined with "then" should produce a dependency; one joined with "and"
+should not). A second case runs 8 single-task probes — three of them written to
+*look* compound — and reports false splits.
+
+```bash
+ARK_API_KEY=your-ark-key ARK_MODEL=ep-your-chat-endpoint ARK_BASE_URL=https://ark.ap-southeast.volces.com/api/v3   npx vitest run src/codify/planner.live.test.ts
+```
+
+The asymmetry in the assertions is deliberate: a missed split costs the second
+half its own specialist, while a **false** split costs a container start, a model
+turn, and a request the user never made. So the floor on false splits is tighter
+than the floor on recall.
 
 Until that measurement exists, the honest claim is narrower than the feature:
 *the detection is measured, the split is implemented and safe by construction —
