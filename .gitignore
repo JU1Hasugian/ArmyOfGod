@@ -1,6 +1,9 @@
 node_modules/
 dist/
 .env
+# The demo fixture's .env holds obviously fake placeholders and must ship, so
+# the appended-exfiltration case has a file to name. It is not a credential.
+!apps/server/fixtures/workspace/repo/.env
 .env.production
 .data/
 .local/

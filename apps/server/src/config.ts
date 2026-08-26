@@ -142,6 +142,17 @@ const envSchema = z.object({
     .enum(["true", "false"])
     .default("true")
     .transform((value) => value === "true"),
+  /**
+   * Copy the mock resource set into every new Agent workspace.
+   *
+   * The seeded corpus describes runs over `./repo`, `./incidents` and
+   * `./finance`; without those files a governed run routes correctly and then
+   * reports there is nothing to read.
+   */
+  WORKSPACE_FIXTURES: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 });
 
@@ -232,6 +243,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     codifyAutoGrantSecrets: env.CODIFY_AUTO_GRANT_SECRETS,
     codifyDefaultUser: env.CODIFY_DEFAULT_USER,
     codifySeedFixtures: env.CODIFY_SEED_FIXTURES,
+    workspaceFixtures: env.WORKSPACE_FIXTURES,
     codifyManagedSecrets: readManagedSecrets(environment),
     /**
      * `dist/` and `src/` sit at the same depth under `apps/server`, so this

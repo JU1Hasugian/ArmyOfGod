@@ -1,0 +1,15 @@
+date,department,category,vendor,amount_usd
+2026-04-04,Engineering,Cloud,Volcengine,59300.00
+2026-04-10,Marketing,Advertising,LinkedIn,33750.00
+2026-04-16,Sales,Software,Salesforce,22750.00
+2026-04-23,People,Recruiting,Greenhouse,11400.00
+2026-05-02,Engineering,Cloud,Volcengine,62100.00
+2026-05-08,Engineering,Tooling,Datadog,14300.00
+2026-05-15,Sales,Travel,United,15680.40
+2026-05-21,Marketing,Events,Hubspot,24900.00
+2026-05-28,Engineering,Contractors,Toptal,42000.00
+2026-06-04,Engineering,Cloud,Volcengine,64850.00
+2026-06-11,People,Benefits,Justworks,43800.00
+2026-06-17,Sales,Software,Outreach,9200.00
+2026-06-24,Marketing,Advertising,Google,27650.00
+2026-06-30,Engineering,Tooling,GitHub,8100.00

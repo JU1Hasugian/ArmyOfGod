@@ -487,6 +487,7 @@ Every setting has a working default; `npm run poc` needs none of them.
 | `CODIFY_LLM_DRAFTING` | on, off under test | Whether promotion and refinement may make a model call. Off ⇒ deterministic fallbacks. |
 | `CODIFY_PLANNER` | on, off under test | Whether a prompt that looks like it asks for several things may be split. This is the one model call on the request path, and it is reached only for prompts carrying a compound signature. Off ⇒ the request runs as one turn. |
 | `CODIFY_SEED_FIXTURES` | `true` | Seed an observed-run corpus on an empty store. |
+| `WORKSPACE_FIXTURES` | `true` | Copy the mock resource set into every new Agent workspace, so the seeded tasks have files to operate on. |
 | `CODIFY_DEFAULT_USER` | `user-a` | Principal when no `x-codify-user` header is sent. |
 | `CODIFY_BROKER_IMAGE` | Runtime image | Image for the broker container; the Runtime image already has `node`. |
 | `CODIFY_SECRET_<NAME>` | — | A credential the platform holds. Injected only when a contract's scope names it. |
@@ -522,7 +523,7 @@ channel; without it the demo still runs, on the lexical channels alone, and
 **0:00–0:30 — The problem, then the proposal.** Open **Codify governance**.
 Candidates are pending. Open the release-notes cluster: 12 runs, 6 distinct
 users, all worded differently — *"generate release notes"*, *"draft the
-changelog"*, *"what shipped since v2.5.0"*. A fifth cluster — one person
+changelog"*, *"what shipped since v2.5.0"*. A fourth cluster — one person
 repeating a credential-collection prompt fifteen times — is *absent*, because it
 fails the distinct-user threshold. Approve it.
 
@@ -571,7 +572,7 @@ why. The first runs with `github.com` and the second with `registry.npmjs.org` �
 **neither Agent ever holds both**, which is the confused-deputy shape a single
 multi-tool Agent would have arrived at by accident.
 
-**2:50–3:00 — Close.** `npm run check` green — 174 tests. State one limitation
+**2:50–3:00 — Close.** `npm run check` green — 229 tests. State one limitation
 from §11.
 
 ---
@@ -579,7 +580,7 @@ from §11.
 ## 9. Tests
 
 `npm run check` runs typecheck, the full vitest suite, and both production
-builds. **224 tests across 27 files** (three skipped without live credentials).
+builds. **229 tests across 29 files** (three skipped without live credentials).
 
 | Area | What it proves |
 |---|---|
@@ -862,6 +863,48 @@ and the one-off work left alone.
   and the learned rules.
 - **Codify guarantees a visible, versioned brief and bounded capability — not
   correctness.**
+- **Identity is asserted, not authenticated.** The principal comes from an
+  `x-codify-user` header (`app.ts`), and the Starter Kit's bearer token is one
+  shared secret rather than a user identity. This is the mock identity model the
+  brief permits, and it is load-bearing in one place worth naming: the
+  distinct-user floor is what stops a single account from manufacturing a
+  contract, and it currently trusts a header the caller writes. A real
+  deployment resolves the principal from an IdP; nothing else in the design
+  changes.
+- **The governance surface has no role check.** Anyone who can reach the API can
+  approve a candidate, edit a contract's scope, or revoke a domain. Approval and
+  scope editing belong behind an operator role.
+
+---
+
+## 11b. Ownership isolation, and the mock resource set
+
+Two changes were made once the flow was exercised as six different people
+rather than one.
+
+**A specialist is one Agent that everybody routes to, so a transcript keyed by
+Agent alone is a cross-user read.** The Codex session was already keyed by
+principal — that was the fix for the specialist answering from the memory of
+having done the task for somebody else — but `getMessages` still filtered on
+`agentId`, so switching principal showed you the previous one's conversation
+while the model, on the next turn, started a thread that had never seen it. The
+page displayed a conversation the model was not in. `Message` now carries
+`userId`, stamped at all three write sites from the principal the run already
+resolves, and `getMessages(agentId, userId)` scopes the read. A record written
+before the field existed has none and stays visible, the same concession
+`resumeThread` already makes for a pre-existing shared thread. The negative case
+— neither principal's turn appearing in the other's view — is asserted in
+`agent-service.test.ts` rather than argued for.
+
+**Detection is seeded; the workspaces were not.** The observed-run corpus
+populates the review queue at t=0, but a promoted specialist got an empty
+workspace, so a governed run routed correctly and then reported there was
+nothing to read — which looks like a broken agent rather than a governed one.
+A mock resource set (`apps/server/fixtures/workspace`) covering the seeded
+families is now copied into every new workspace: `repo/` for release notes and
+the dependency audit, `incidents/` for the postmortem, `finance/` for a task
+with no contract yet. Copying never fails Agent creation, and
+`WORKSPACE_FIXTURES=false` restores bare workspaces.
 
 ---
 
@@ -902,7 +945,7 @@ test asserting the production-mode error shape.
 |---|---|---|
 | End-to-end middleware behavior | 40% | Routing changes **which Agent and which brief** executes a turn, on three channels that fail in different directions. Enforcement executes at container launch and at the broker, on a network the Agent cannot route around, and a promoted specialist carries its scope even when nothing matches. Budget refuses at admission before a Run exists. All verified against live Ark and real Docker (§10, `docs/SEMANTIC-ROUTING.md` §4–4b). |
 | Technical design and integration | 25% | Reuses `AgentService` and `AgentRunner`; enforcement lives in `ContainerCodexRunner` only. Ten additive record types with backfill, so an older store still loads, and a contract promoted before the semantic channel existed still matches on its fingerprints. `CapabilityScope`, `TaskBudget` and `TaskContract` are the extensible contracts. Coordination adds no execution path of its own — a session turn goes through the ordinary `sendMessage` seam, which is what makes "each participant under its own scope" true rather than aspirational. |
-| Verification and robustness | 20% | 174 tests, including a cooperation-independent network test, credential isolation, fail-closed, forged-scope, delegation fallback, the padding evasion, channel complementarity, principal binding, budget lineage, trace crash-closure, and the coordination turn claim. Redaction before storage; deterministic fallbacks for every model call; bounded retry so a rate limit cannot silently become a policy decision; per-run cleanup. |
+| Verification and robustness | 20% | 229 tests, including a cooperation-independent network test, credential isolation, fail-closed, forged-scope, delegation fallback, the padding evasion, channel complementarity, principal binding, budget lineage, trace crash-closure, and the coordination turn claim. Redaction before storage; deterministic fallbacks for every model call; bounded retry so a rate limit cannot silently become a policy decision; per-run cleanup. |
 | Demo and reproducibility | 15% | One-command startup preserved; seeded corpus makes the flow reproducible at t=0; the live-endpoint test skips cleanly without credentials so `npm run check` is green either way; limitations documented; no hidden manual setup. |
 
 ### Optional-evidence checkboxes

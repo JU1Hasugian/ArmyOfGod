@@ -55,6 +55,15 @@ export interface Message {
   role: MessageRole;
   content: string;
   createdAt: string;
+  /**
+   * The human principal this turn belongs to.
+   *
+   * A specialist is one Agent that everybody routes to, so a transcript keyed
+   * by Agent alone shows every principal's conversation to every principal.
+   * Optional because a store written before this field existed has none, and
+   * those records stay visible to everyone rather than disappearing.
+   */
+  userId?: string;
 }
 
 export interface RunUsage {

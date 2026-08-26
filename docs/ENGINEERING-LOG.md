@@ -26,8 +26,8 @@ answer, and least privilege arrives as a side effect.
 Read in this order: `README.md` → `docs/CODIFY.md` (design) →
 `docs/SEMANTIC-ROUTING.md` (all measurement).
 
-**Where things stand.** Ten mechanisms, all implemented and enforced; 224 tests
-across 27 files, of which 3 skip without live credentials; `npm run check` green
+**Where things stand.** Ten mechanisms, all implemented and enforced; 229 tests
+across 29 files, of which 3 skip without live credentials; `npm run check` green
 (typecheck + suite + both production builds). Every headline claim is measured
 against data the author did not write, and §9 lists what is not.
 
@@ -335,11 +335,41 @@ that pass and only surfaces it for failures, so the first successful run printed
 no table and looked like it had measured nothing. `--disable-console-intercept`
 is in §10 for that reason.
 
+**The split path was matching on two channels, not three.** Running the demo
+end to end from an empty store exposed it. A compound request split correctly
+into *"audit the dependencies…"* and *"generate release notes since v2.7.0…"*,
+and the second fragment — with an active release-notes contract sitting right
+there — routed to the **general Agent with no contract**. Pasted into the
+Playground on its own, the identical string matched at **semantic 0.925**.
+
+The cause was one missing field. `selectFor` built its `MatchCandidate` from
+the fingerprint and canonical form only; `MatchCandidate.embedding` is optional,
+`packedCosine` returns nothing when it is absent, and the semantic channel
+therefore contributed nothing on the coordination path. `selectParticipant` was
+synchronous, so there was nowhere to await the embedding call — the signature
+was the bug. `selectFor`, `planWave` and `planTurn` are now async and the
+candidate carries an embedding, taken over the instruction text rather than the
+canonical form for the reason in §2.2.
+
+Worth recording *why* the existing tests could not catch it. `plan-session.test.ts`
+asserts that a bad split can never merge two contracts' scopes, and that stayed
+true throughout: the misrouted fragment ran with *less* capability, not more. The
+safety property held while the feature's headline claim — the recognised half
+runs under its contract's scope — was false. **A test that pins the security
+invariant does not pin the behaviour the invariant was built to enable**, which
+is the same shape as §2.2: a matcher that typechecks and passes its tests can
+still recognise almost nothing.
+
+The general lesson for this repo is now three for three: every defect that
+mattered was found by running the thing against real input, not by reading it.
+
+---
+
 ## 7. Verification surface
 
 | test | proves | how to run |
 |---|---|---|
-| `npm run check` | 224 tests, typecheck, both builds | `npm run check` |
+| `npm run check` | 229 tests, typecheck, both builds | `npm run check` |
 | `semantic.live.test.ts` | recognition against a real Ark endpoint | `ARK_API_KEY` + `ARK_EMBED_MODEL`; see §10 |
 | `planner.live.test.ts` | **8/8 split, 8/8 both halves, 8/8 ordering, 0/8 false splits** over four runs | `ARK_API_KEY` + `ARK_MODEL`; see §10 |
 | live-demo (49 checks) | the policy **binds** — real Docker, real Codex, derived scope enforced, `ab.chatgpt.com` refused, budget 429, trace, two specialists never sharing a scope | scratch harness, needs a container engine |
@@ -383,7 +413,13 @@ is in §10 for that reason.
 
 **Blocking, and not fixable from here.** The GitHub repository is **private**.
 Anonymous clone returns 404/401, so a reviewer cannot clone it — the first line
-of the acceptance checklist. The git credential on this machine has `push` but
+of the acceptance checklist.
+
+> Note for whoever tries the obvious shortcut: this checkout has a second
+> remote, `origin` → `RrankPyramid/CodeJam`, which *is* public and shares the
+> merge base. It is the organisers' Starter Kit upstream, named as such in the
+> brief — **not** a publishable home for this work. Push there and you are
+> pushing at the challenge repository. The git credential on this machine has `push` but
 **not `admin`** on `JU1Hasugian/ArmyOfGod` (confirmed via the API:
 `permissions.admin: false`), and `gh` is not installed, so no agent can flip it.
 The owner must do it: **Settings → General → Danger Zone → Change visibility**.
@@ -403,6 +439,12 @@ verified in the resulting `RouteDecision`, not assumed.
 eight probes the author wrote. That is a floor on confidence, not a population
 estimate. Widening it to generated compound prompts, the way §4c did for
 matching, would strengthen it.
+
+**Closed since the last entry.** Cross-principal transcript reads
+(`Message.userId`, §11b), empty specialist workspaces (the mock resource set,
+§11b), and the split path's missing semantic channel (§6). All three were found
+by running the demo from an empty store as six different people; none were
+visible from the code.
 
 **Known limitations**, in `docs/CODIFY.md` §11: within-family over-matching, word
 order (PAWS unaffected by embeddings), budget binding at admission only,

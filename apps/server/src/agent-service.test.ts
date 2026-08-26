@@ -59,6 +59,30 @@ async function makeService(runner: AgentRunner = new FakeRunner()): Promise<Agen
   return service;
 }
 
+/** Same service, with the store handed back so a test can age its records. */
+async function makeServiceWithStore(): Promise<{ service: AgentService; store: JsonStore }> {
+  const root = await mkdtemp(path.join(tmpdir(), "launchpad-test-"));
+  temporaryDirectories.push(root);
+  const config = loadConfig({
+    NODE_ENV: "test",
+    APP_DATA_DIR: path.join(root, "data"),
+    AGENT_WORKSPACE_ROOT: path.join(root, "workspaces"),
+    CODEX_HOME: path.join(root, "codex"),
+    ARK_API_KEY: "test-key",
+    ARK_MODEL: "ep-test",
+  });
+  const store = new JsonStore(path.join(root, "data", "db.json"));
+  const service = new AgentService(
+    config,
+    store,
+    new WorkspaceManager(path.join(root, "workspaces")),
+    new FakeRunner(),
+    new CodifyService(config, store),
+  );
+  await service.initialize();
+  return { service, store };
+}
+
 describe("Agent lifecycle", () => {
   it("creates, updates, stops, starts and deletes an Agent", async () => {
     const service = await makeService();
@@ -81,6 +105,55 @@ describe("Agent lifecycle", () => {
     expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
     expect(messages[1]?.content).toContain("write hello world");
     expect(service.getAgent(agent.id).codexThreadId).toBe("fake-thread");
+  });
+
+  /**
+   * A promoted specialist is one Agent that everybody routes to. The Codex
+   * session is already keyed by principal; the transcript must agree, or the
+   * page shows one principal the conversation of another.
+   */
+  it("shows each principal only its own transcript on a shared Agent", async () => {
+    const service = await makeService();
+    const agent = await service.createAgent({ name: "Shared specialist" });
+
+    const first = await service.sendMessage(agent.id, "alice private question", {
+      userId: "user-a",
+    });
+    await expect.poll(() => service.getRun(first.run.id).status).toBe("completed");
+    const second = await service.sendMessage(agent.id, "bob private question", {
+      userId: "user-b",
+    });
+    await expect.poll(() => service.getRun(second.run.id).status).toBe("completed");
+
+    const alice = service.getMessages(agent.id, "user-a");
+    const bob = service.getMessages(agent.id, "user-b");
+
+    expect(alice).toHaveLength(2);
+    expect(bob).toHaveLength(2);
+    // The negative case: neither principal's turn appears in the other's view,
+    // in the prompt or in the reply that quotes it back.
+    expect(alice.every((message) => !message.content.includes("bob"))).toBe(true);
+    expect(bob.every((message) => !message.content.includes("alice"))).toBe(true);
+    expect(alice.every((message) => message.userId === "user-a")).toBe(true);
+    expect(bob.every((message) => message.userId === "user-b")).toBe(true);
+
+    // An operator asking for no particular principal still sees the whole
+    // Agent, which is what the governance views rely on.
+    expect(service.getMessages(agent.id)).toHaveLength(4);
+  });
+
+  it("keeps pre-existing messages visible after userId was introduced", async () => {
+    const { service, store } = await makeServiceWithStore();
+    const agent = await service.createAgent({ name: "Legacy" });
+    const { run } = await service.sendMessage(agent.id, "written before principals");
+    await expect.poll(() => service.getRun(run.id).status).toBe("completed");
+
+    // Age the records: a store written before the field existed carries none.
+    await store.mutate((database) => {
+      for (const message of database.messages) delete message.userId;
+    });
+
+    expect(service.getMessages(agent.id, "someone-new")).toHaveLength(2);
   });
 
   it("atomically accepts only one concurrent run per Agent", async () => {

@@ -1,0 +1,11 @@
+{
+  "name": "acme-checkout",
+  "version": "2.7.0",
+  "private": true,
+  "dependencies": {
+    "express": "4.18.2",
+    "lodash": "4.17.20",
+    "minimist": "1.2.5",
+    "node-fetch": "2.6.6"
+  }
+}

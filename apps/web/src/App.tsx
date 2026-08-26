@@ -12,7 +12,7 @@ import type {
 } from "./types";
 
 /** Mock principals, as the brief permits. Authorization is server-side. */
-const PRINCIPALS = ["user-a", "user-b", "user-c", "operator"];
+const PRINCIPALS = ["user-a", "user-b", "user-c", "user-d", "user-e", "user-f", "operator"];
 
 const starterPrompts = [
   "Create a small TypeScript CLI that prints a weather summary from sample JSON.",
@@ -356,6 +356,9 @@ export default function App() {
     };
   }, [bootstrap]);
 
+  // `principal` is a dependency because the transcript is scoped to it
+  // server-side: switching who you are signed in as must refetch, or the page
+  // keeps showing the previous principal's conversation.
   useEffect(() => {
     setActiveRun(null);
     setShowSettings(false);
@@ -377,7 +380,7 @@ export default function App() {
       .catch((reason) =>
         setError(reason instanceof Error ? reason.message : String(reason)),
       );
-  }, [refreshMessages, selectedId]);
+  }, [refreshMessages, selectedId, principal]);
 
   useEffect(() => {
     if (selected) {

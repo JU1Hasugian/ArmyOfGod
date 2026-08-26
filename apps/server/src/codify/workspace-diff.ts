@@ -21,6 +21,17 @@ const IGNORED_DIRECTORIES = new Set([
   ".cache",
 ]);
 
+/**
+ * Files the platform itself writes into every workspace.
+ *
+ * These are not the task's output and must not reach a derived scope: a
+ * contract that grants `rw` on `.codex` is describing the platform's own
+ * bookkeeping as though the task had asked for it. `.codex` is a *file* on the
+ * host-process path and a directory under the container, so the directory set
+ * above does not catch both.
+ */
+const IGNORED_FILES = new Set([".codex", "AGENTS.md"]);
+
 /** Cap the walk so a runaway workspace cannot stall a turn. */
 const MAX_ENTRIES = 5_000;
 
@@ -53,6 +64,7 @@ export async function snapshotWorkspace(root: string): Promise<WorkspaceSnapshot
         continue;
       }
       if (!entry.isFile()) continue;
+      if (!relative && IGNORED_FILES.has(entry.name)) continue;
       try {
         const stats = await stat(path.join(directory, entry.name));
         snapshot.set(relativePath, {

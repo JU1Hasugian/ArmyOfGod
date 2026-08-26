@@ -9,6 +9,7 @@ import type {
   RunnerRequest,
   RunnerResult,
 } from "./types.js";
+import { diffWorkspace, snapshotWorkspace } from "./codify/workspace-diff.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -129,6 +130,17 @@ export class CodexRunner implements AgentRunner {
       throw new Error("Agent already has an active Codex process");
     }
 
+    // Observation is not the container's job — it is a before/after read of the
+    // workspace, and it works the same whether Codex runs in a container or as
+    // a host process. Only the container runner used to do it, so on this path
+    // every derived scope came back empty: the platform learned nothing about
+    // what a task touched, and a promoted contract said "no egress, workspace
+    // read-only" because nothing had been seen rather than because nothing
+    // happened.
+    const before = request.onEvidence
+      ? await snapshotWorkspace(request.workspacePath).catch(() => null)
+      : null;
+
     const args = buildCodexArgs(request, this.config.codexSandboxMode);
     const child = spawn(this.config.codexBin, args, {
       cwd: request.workspacePath,
@@ -224,6 +236,28 @@ export class CodexRunner implements AgentRunner {
       clearTimeout(timeout);
       if (active.forceKillTimer) clearTimeout(active.forceKillTimer);
       this.active.delete(request.agentId);
+      // In `finally`, because a denied or failed run is exactly the one whose
+      // evidence matters most. There is no broker on this path and no managed
+      // secret is injected, so those arrive empty rather than absent.
+      if (request.onEvidence) {
+        let pathsWritten: string[] = [];
+        let pathsRead: string[] = [];
+        try {
+          if (before) {
+            const delta = diffWorkspace(before, await snapshotWorkspace(request.workspacePath));
+            pathsWritten = delta.pathsWritten;
+            pathsRead = delta.pathsRead;
+          }
+        } catch {
+          /* Evidence collection must never mask the run's own outcome. */
+        }
+        request.onEvidence({
+          brokerEvents: [],
+          pathsWritten,
+          pathsRead,
+          secretsGranted: [],
+        });
+      }
     }
   }
 

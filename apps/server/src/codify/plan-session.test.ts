@@ -143,7 +143,7 @@ describe("each fragment is routed on its own merits", () => {
       { text: SQL_TASK, dependsOn: [] },
       { text: STATUS_TASK, dependsOn: [] },
     ]);
-    const wave = service.planWave(session.id);
+    const wave = await service.planWave(session.id);
     const byAgent = new Map(wave.map((step) => [step.selection.agentId, step]));
     expect(byAgent.get(AGENT_SQL)?.selection.contract?.scope.domains).toEqual([
       "warehouse.internal",
@@ -160,7 +160,7 @@ describe("each fragment is routed on its own merits", () => {
     ]);
     // The reason for splitting at all: the alternative is one Agent holding the
     // union, which is the shape Codify exists to prevent.
-    for (const step of service.planWave(session.id)) {
+    for (const step of await service.planWave(session.id)) {
       expect(step.selection.contract?.scope.domains ?? []).toHaveLength(1);
     }
   });
@@ -170,7 +170,7 @@ describe("each fragment is routed on its own merits", () => {
       { text: SQL_TASK, dependsOn: [] },
       { text: EMAIL_STEP, dependsOn: [] },
     ]);
-    const wave = service.planWave(session.id);
+    const wave = await service.planWave(session.id);
     const unmatched = wave.find((step) => step.stepIndex === 1);
     // Not the idle specialist — an unrecognised step is novel work, and novel
     // work must not borrow a specialism it was never granted.
@@ -186,7 +186,7 @@ describe("independent steps run together, dependent steps take turns", () => {
       { text: SQL_TASK, dependsOn: [] },
       { text: STATUS_TASK, dependsOn: [] },
     ]);
-    expect(service.planWave(session.id).map((step) => step.stepIndex)).toEqual([0, 1]);
+    expect((await service.planWave(session.id)).map((step) => step.stepIndex)).toEqual([0, 1]);
   });
 
   it("holds a dependent step back until its input exists", async () => {
@@ -194,7 +194,7 @@ describe("independent steps run together, dependent steps take turns", () => {
       { text: SQL_TASK, dependsOn: [] },
       { text: EMAIL_STEP, dependsOn: [0] },
     ]);
-    expect(service.planWave(session.id).map((step) => step.stepIndex)).toEqual([0]);
+    expect((await service.planWave(session.id)).map((step) => step.stepIndex)).toEqual([0]);
 
     await complete(
       store,
@@ -202,7 +202,7 @@ describe("independent steps run together, dependent steps take turns", () => {
       { stepIndex: 0, agentId: AGENT_SQL, agentName: "Signups report", instruction: SQL_TASK },
       { status: "completed", output: "Wrote ./out/signups.md" },
     );
-    expect(service.planWave(session.id).map((step) => step.stepIndex)).toEqual([1]);
+    expect((await service.planWave(session.id)).map((step) => step.stepIndex)).toEqual([1]);
   });
 
   it("defers a step whose Agent is already busy on this session", async () => {
@@ -212,7 +212,7 @@ describe("independent steps run together, dependent steps take turns", () => {
       { text: SQL_TASK, dependsOn: [] },
       { text: SQL_TASK + " again", dependsOn: [] },
     ]);
-    const wave = service.planWave(session.id);
+    const wave = await service.planWave(session.id);
     expect(wave).toHaveLength(1);
     await claimTurn(store, session.id, {
       stepIndex: wave[0]!.stepIndex!,
@@ -221,7 +221,7 @@ describe("independent steps run together, dependent steps take turns", () => {
       selection: "test",
       instruction: SQL_TASK,
     });
-    expect(service.planWave(session.id)).toHaveLength(0);
+    expect(await service.planWave(session.id)).toHaveLength(0);
   });
 
   it("passes the dependency's output down as data, not as an instruction", async () => {

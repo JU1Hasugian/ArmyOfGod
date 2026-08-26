@@ -194,11 +194,30 @@ export class AgentService {
     return this.setStatus(id, "stopped");
   }
 
-  getMessages(agentId: string): Message[] {
+  /**
+   * The transcript one principal may see on one Agent.
+   *
+   * Keyed by principal, not by Agent, because a promoted specialist is a single
+   * Agent that everybody routes to: filtering on `agentId` alone hands every
+   * caller everyone else's conversation. This mirrors `resumeThread`, which
+   * already keys the Codex session by principal — the displayed transcript and
+   * the session the model actually sees must agree, or the page shows a
+   * conversation the model was never part of.
+   *
+   * A record written before `userId` existed has none, and stays visible to
+   * everyone rather than vanishing from the history that already displayed it.
+   */
+  getMessages(agentId: string, userId?: string): Message[] {
     this.getAgent(agentId);
     return this.store
       .snapshot()
-      .messages.filter((message) => message.agentId === agentId)
+      .messages.filter(
+        (message) =>
+          message.agentId === agentId &&
+          (userId === undefined ||
+            message.userId === undefined ||
+            message.userId === userId),
+      )
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
   }
 
@@ -367,6 +386,7 @@ export class AgentService {
             role: "user",
             content: storedPrompt,
             createdAt: timestamp,
+            userId,
           };
           await this.store.mutate((database) => {
             database.messages.push(asked);
@@ -439,6 +459,7 @@ export class AgentService {
       role: "user",
       content: storedPrompt,
       createdAt: timestamp,
+      userId,
     };
 
     const agentAtStart = await this.store.mutate((database) => {
@@ -550,7 +571,7 @@ export class AgentService {
     sessionId: string,
     onDispatch?: (dispatched: { run: AgentRun; message: Message }) => void,
   ): Promise<CoordinationSession> {
-    const wave = this.codify.planWave(sessionId);
+    const wave = await this.codify.planWave(sessionId);
     if (wave.length === 0) return this.codify.getSession(sessionId);
     await Promise.all(wave.map((step) => this.runSessionTurn(sessionId, step, onDispatch)));
     return this.codify.getSession(sessionId);
@@ -580,7 +601,7 @@ export class AgentService {
   /** Claim, run and settle a single session turn. */
   private async runSessionTurn(
     sessionId: string,
-    step: ReturnType<CodifyService["planWave"]>[number],
+    step: Awaited<ReturnType<CodifyService["planWave"]>>[number],
     onDispatch?: (dispatched: { run: AgentRun; message: Message }) => void,
   ): Promise<void> {
     const participant = this.getAgent(step.selection.agentId);
@@ -963,6 +984,7 @@ export class AgentService {
           role: "assistant",
           content: result.output,
           createdAt: completedAt,
+          userId: context.userId,
         });
         agent.status = "ready";
         agent.codexThreadId = result.threadId;

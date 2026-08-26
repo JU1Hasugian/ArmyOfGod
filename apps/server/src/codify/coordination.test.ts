@@ -127,7 +127,7 @@ async function withSession(goal: string, maxTurns = 6) {
 describe("turn selection is the router", () => {
   it("hands a step to the specialist whose contract matches it", async () => {
     const { context, session } = await withSession(RELEASE_TASK);
-    const plan = context.service.planTurn(session.id);
+    const plan = await context.service.planTurn(session.id);
     expect(plan?.selection.agentId).toBe(AGENT_NOTES);
     // Selection and authorisation are the same decision, so the contract that
     // chose the participant is the contract whose scope the step runs under.
@@ -136,14 +136,14 @@ describe("turn selection is the router", () => {
 
   it("hands a different step to a different specialist", async () => {
     const { context, session } = await withSession(AUDIT_TASK);
-    const plan = context.service.planTurn(session.id);
+    const plan = await context.service.planTurn(session.id);
     expect(plan?.selection.agentId).toBe(AGENT_AUDIT);
     expect(plan?.selection.contract?.scope.domains).toEqual(["registry.npmjs.org"]);
   });
 
   it("never produces the union of both participants' scopes", async () => {
     const { context, session } = await withSession(RELEASE_TASK);
-    const plan = context.service.planTurn(session.id);
+    const plan = await context.service.planTurn(session.id);
     const domains = plan?.selection.contract?.scope.domains ?? [];
     // The whole reason coordination lives here: one Agent holding both scopes
     // is the confused-deputy shape this is supposed to prevent.
@@ -153,7 +153,7 @@ describe("turn selection is the router", () => {
 
   it("falls back to the longest-idle participant when nothing matches", async () => {
     const { context, session } = await withSession("Say hello to the team");
-    const first = context.service.planTurn(session.id);
+    const first = await context.service.planTurn(session.id);
     expect(first?.selection.contract).toBeUndefined();
     expect(first?.selection.reason).toMatch(/idle longest/i);
     // Fairness only. The step is still principal-bound, so an unrecognised
@@ -163,7 +163,7 @@ describe("turn selection is the router", () => {
 
   it("rotates the fallback rather than picking the same Agent forever", async () => {
     const { context, session } = await withSession("Say hello to the team");
-    const first = context.service.planTurn(session.id);
+    const first = await context.service.planTurn(session.id);
     await context.service.claimTurn(session.id, {
       agentId: first!.selection.agentId,
       agentName: "first",
@@ -171,7 +171,7 @@ describe("turn selection is the router", () => {
       instruction: "hello",
     });
     await context.service.settleTurn(session.id, 0, { status: "completed", output: "hi" });
-    const second = context.service.planTurn(session.id);
+    const second = await context.service.planTurn(session.id);
     expect(second?.selection.agentId).not.toBe(first?.selection.agentId);
   });
 
@@ -291,7 +291,7 @@ describe("the session provably terminates", () => {
     expect(finished.status).toBe("stopped");
     expect(finished.stopReason).toMatch(/ceiling/i);
     // And a further turn cannot be planned.
-    expect(context.service.planTurn(session.id)).toBeNull();
+    expect(await context.service.planTurn(session.id)).toBeNull();
   });
 
   it("stops after two consecutive failures rather than retrying forever", async () => {

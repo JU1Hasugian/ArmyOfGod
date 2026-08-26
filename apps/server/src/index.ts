@@ -1,4 +1,5 @@
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { AgentService } from "./agent-service.js";
 import { createApp } from "./app.js";
 import { loadConfig, writeCodexConfig } from "./config.js";
@@ -12,7 +13,13 @@ const config = loadConfig();
 await writeCodexConfig(config);
 
 const store = new JsonStore(path.join(config.dataDirectory, "launchpad.json"));
-const workspaces = new WorkspaceManager(config.workspaceRoot);
+// Resolved from this module rather than the working directory, so the mock
+// resource set is found whether the server is started from the repo root or
+// from its own package.
+const fixturesDirectory = config.workspaceFixtures
+  ? path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../fixtures/workspace")
+  : null;
+const workspaces = new WorkspaceManager(config.workspaceRoot, fixturesDirectory);
 const runner = createRunner(config);
 const codify = new CodifyService(config, store);
 const service = new AgentService(config, store, workspaces, runner, codify);

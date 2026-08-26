@@ -23,12 +23,19 @@ import {
   clusterKey,
   fingerprint,
 } from "./fingerprint.js";
-import { draftBrief, draftRule, reviewScope } from "./ark-client.js";
+import {
+  draftBrief,
+  draftRule,
+  reviewScope,
+  type BriefSample,
+  type ObservedBehaviour,
+} from "./ark-client.js";
 import {
   NEAR_MATCH_FRACTION,
   bestMatch,
   clusterByMatch,
   embedPrompt,
+  packedCosine,
   type MatchCandidate,
   type MatchResult,
   type MatchThresholds,
@@ -642,12 +649,12 @@ export class CodifyService {
    * Split out from executing it so the selection is testable on its own and so
    * the caller — which owns the Agent lifecycle — performs the run.
    */
-  planTurn(sessionId: string): {
+  async planTurn(sessionId: string): Promise<{
     session: CoordinationSession;
     selection: SelectionResult;
     instruction: string;
-  } | null {
-    const wave = this.planWave(sessionId);
+  } | null> {
+    const wave = await this.planWave(sessionId);
     return wave[0] ?? null;
   }
 
@@ -666,12 +673,14 @@ export class CodifyService {
    * the contract that recognised *it* — never a union, and never the scope of
    * whichever contract happened to match the compound prompt best.
    */
-  planWave(sessionId: string): {
-    session: CoordinationSession;
-    selection: SelectionResult;
-    instruction: string;
-    stepIndex?: number;
-  }[] {
+  async planWave(sessionId: string): Promise<
+    {
+      session: CoordinationSession;
+      selection: SelectionResult;
+      instruction: string;
+      stepIndex?: number;
+    }[]
+  > {
     const session = this.getSession(sessionId);
     const stop = shouldStop(session);
     if (stop.stop) return [];
@@ -688,7 +697,7 @@ export class CodifyService {
       );
       for (const stepIndex of pendingSteps(session)) {
         const instruction = planInstruction(session, stepIndex);
-        const selection = this.selectFor(session, instruction);
+        const selection = await this.selectFor(session, instruction);
         if (!selection) continue;
         // Two steps of the same wave that route to the same Agent cannot run at
         // once; the later one waits for the next wave rather than being refused.
@@ -700,18 +709,41 @@ export class CodifyService {
     }
 
     const instruction = buildInstruction(session);
-    const selection = this.selectFor(session, instruction);
+    const selection = await this.selectFor(session, instruction);
     if (!selection) return [];
     return [{ session, selection, instruction }];
   }
 
-  /** Route one instruction to a participant, exactly as a Playground turn routes. */
-  private selectFor(session: CoordinationSession, instruction: string): SelectionResult | null {
+  /**
+   * Route one instruction to a participant, exactly as a Playground turn routes.
+   *
+   * "Exactly" is load-bearing and was once untrue. This built the candidate
+   * from the fingerprint and canonical form alone, which left the semantic
+   * channel with nothing to compare and silently reduced coordination to the
+   * two lexical channels. A split fragment that scores 0.925 semantically in
+   * the Playground then arrived here unrecognised and fell through to the
+   * general Agent — the recognised half of a compound request losing its
+   * contract, which is the opposite of what splitting is for.
+   *
+   * The embedding is taken over the instruction text rather than the canonical
+   * form, for the reason given in `semantic.ts`: canonicalisation destroys the
+   * signal an embedding model reads. It fails soft like every other model call
+   * on the routing path — a null embedding just leaves the lexical channels.
+   */
+  private async selectFor(
+    session: CoordinationSession,
+    instruction: string,
+  ): Promise<SelectionResult | null> {
     const database = this.store.snapshot();
     const canonicalForm = canonicalize(instruction);
+    const embedding = await embedPrompt(this.config, instruction);
     return selectParticipant({
       session,
-      instruction: { fingerprint: fingerprint(canonicalForm), canonicalForm },
+      instruction: {
+        fingerprint: fingerprint(canonicalForm),
+        canonicalForm,
+        ...(embedding ? { embedding } : {}),
+      },
       participants: database.agents,
       contracts: database.contracts,
       thresholds: this.defaultThresholds(),
@@ -971,7 +1003,13 @@ export class CodifyService {
         distinctUsers,
         status: "pending",
         proposedName: proposeName(first.redactedText),
-        proposedPrompt: sanitisePrompt(members.map((member) => member.redactedText)),
+        // Paired run by run: each wording next to what that same run did.
+        proposedPrompt: sanitisePrompt(
+          members.map((member) => ({
+            request: member.redactedText,
+            observed: observedFor(capabilityByRun.get(member.runId)),
+          })),
+        ),
         proposedScope: deriveScope(capabilities),
         createdAt: now(),
         updatedAt: now(),
@@ -1169,9 +1207,24 @@ export class CodifyService {
     // turns "the median past request" into an actual operating brief. If it
     // fails for any reason the deterministic brief is used instead, so
     // promotion never depends on a model being reachable.
+    //
+    // Two choices here matter. The samples are chosen to *span* the cluster
+    // rather than taken in arrival order — a cluster grows outwards from a
+    // seed, so its first eight members are the ones most like each other, and
+    // distilling from those describes the narrowest phrasing of the task. And
+    // each request travels with what that same run did, so the model reads the
+    // wording and the behaviour together.
+    const capabilityByRun = new Map(
+      this.store
+        .snapshot()
+        .capabilityObservations.map((entry) => [entry.runId, entry] as const),
+    );
     const drafted = await draftBrief(
       this.config,
-      observations.map((observation) => observation.redactedText),
+      diverseExemplars(observations, 8).map((observation) => ({
+        request: observation.redactedText,
+        observed: observedFor(capabilityByRun.get(observation.runId)),
+      })),
     );
     const brief = drafted?.brief
       ? buildSpecification(drafted.brief)
@@ -1614,12 +1667,14 @@ function proposeName(exemplar: string): string {
   const words: string[] = [];
   for (const word of exemplar.replace(/[.,;:!?]/g, " ").split(/\s+/)) {
     if (!word) continue;
-    const isPlaceholder =
-      word.startsWith("./") ||
-      word.startsWith("/") ||
-      word.startsWith("[redacted:") ||
-      /^v?\d/.test(word);
-    if (isPlaceholder || words.length >= 6) break;
+    // A path or a redaction ends the name: whatever follows is an argument,
+    // not a description of the task.
+    if (word.startsWith("./") || word.startsWith("/") || word.startsWith("[redacted:")) break;
+    // A bare number or version is skipped rather than treated as a terminator.
+    // Ending here truncated "Summarise the 2026 finances in ./finance" to the
+    // single word "Summarise", because the year arrived before any noun did.
+    if (/^v?\d/.test(word)) continue;
+    if (words.length >= 6) break;
     words.push(word);
   }
   // Trim trailing filler left behind by the truncation.
@@ -1671,22 +1726,138 @@ export function buildSpecification(body: string): string {
   ].join("\n");
 }
 
-export function sanitisePrompt(exemplars: string[]): string {
-  const cleaned = exemplars
-    .map((text) =>
-      text
+/**
+ * Choose up to `limit` exemplars that span the cluster rather than the first
+ * few that arrived.
+ *
+ * Taking `slice(0, 8)` of a cluster hands the model whichever eight landed
+ * first, and a cluster grows from a seed outwards — so the first eight are the
+ * ones most like each other, which is the narrowest possible view of how a task
+ * is phrased. Greedy farthest-point selection instead: start from the longest
+ * exemplar, then repeatedly take the one least similar to everything already
+ * chosen. Where embeddings are unavailable the distance falls back to token
+ * overlap, so the spread still beats arrival order.
+ */
+export function diverseExemplars<T extends { redactedText: string; embedding?: string }>(
+  observations: T[],
+  limit: number,
+): T[] {
+  if (observations.length <= limit) return [...observations];
+
+  const tokens = (text: string) =>
+    new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean));
+  const tokenSets = new Map<T, Set<string>>(
+    observations.map((observation) => [observation, tokens(observation.redactedText)]),
+  );
+  const similarity = (left: T, right: T): number => {
+    const cosine = packedCosine(left.embedding, right.embedding);
+    if (cosine > 0) return cosine;
+    const a = tokenSets.get(left) as Set<string>;
+    const b = tokenSets.get(right) as Set<string>;
+    if (a.size === 0 || b.size === 0) return 0;
+    let shared = 0;
+    for (const token of a) if (b.has(token)) shared += 1;
+    return shared / new Set([...a, ...b]).size;
+  };
+
+  // The longest exemplar is the most specific one, and a specific starting
+  // point gives the spread something to move away from.
+  const remaining = [...observations].sort(
+    (left, right) => right.redactedText.length - left.redactedText.length,
+  );
+  const chosen: T[] = [remaining.shift() as T];
+  while (chosen.length < limit && remaining.length > 0) {
+    let bestIndex = 0;
+    let bestScore = Number.POSITIVE_INFINITY;
+    for (let index = 0; index < remaining.length; index += 1) {
+      const candidate = remaining[index] as T;
+      let worst = 0;
+      for (const picked of chosen) worst = Math.max(worst, similarity(candidate, picked));
+      if (worst < bestScore) {
+        bestScore = worst;
+        bestIndex = index;
+      }
+    }
+    chosen.push(remaining.splice(bestIndex, 1)[0] as T);
+  }
+  return chosen;
+}
+
+/**
+ * The deterministic brief, used when no model call is available.
+ *
+ * This used to return the median-length exemplar, described in a comment as "a
+ * reasonable representative". It is not: it is one person's phrasing, selected
+ * by character count, promoted to the organisation's standing brief. Whatever
+ * happened to be idiosyncratic about that one request became policy.
+ *
+ * It now lists the runs as pairs — what was asked, and what that same run did.
+ * Pooling the wordings into a set of shared terms was the other candidate and
+ * is worse: it discards which request produced which behaviour, and that
+ * correspondence is the only thing here that explains a task rather than
+ * labelling it. A reader can see the range of phrasings and the constant
+ * behaviour underneath them, which is what a brief is for.
+ *
+ * Still a fallback, not a rival to the drafted brief — it describes the task
+ * rather than prescribing a procedure, and it says so.
+ */
+export function sanitisePrompt(samples: BriefSample[]): string {
+  const cleaned = samples
+    .map((sample) => ({
+      ...sample,
+      request: sample.request
         .split(/\r?\n/)
         .filter((line) => !DIRECTIVE_DENYLIST.some((pattern) => pattern.test(line)))
         .join("\n")
         .trim(),
-    )
-    .filter(Boolean);
+    }))
+    .filter((sample) => sample.request.length > 0);
 
-  // The median-length exemplar is a reasonable representative without a model.
-  const sorted = [...cleaned].sort((left, right) => left.length - right.length);
-  const representative = sorted[Math.floor(sorted.length / 2)] ?? "";
+  if (cleaned.length === 0) {
+    return buildSpecification("No exemplar text survived redaction and sanitisation.");
+  }
 
-  return buildSpecification(
-    representative || "No exemplar text survived redaction and sanitisation.",
+  const lines: string[] = [
+    "This task has been requested " + cleaned.length + " times. Each run below is",
+    "what somebody asked for, followed by what that same run actually did.",
+    "",
+  ];
+  for (const [index, sample] of cleaned.slice(0, 8).entries()) {
+    lines.push((index + 1) + ". Asked: " + sample.request);
+    lines.push("   Did:   " + describeObserved(sample.observed));
+  }
+  lines.push(
+    "",
+    "Do what these runs did. Where the wordings differ, the behaviour above is the",
+    "record of what the task actually is.",
+    "",
+    "This is a description assembled from observation, not a drafted procedure:",
+    "no model was available when this task was promoted.",
   );
+
+  return buildSpecification(lines.join("\n"));
+}
+
+/** One run's behaviour, phrased for a reader. Mirrors the drafting payload. */
+function describeObserved(observed: ObservedBehaviour | undefined): string {
+  if (!observed) return "not observed";
+  const parts: string[] = [];
+  if (observed.pathsRead.length > 0) parts.push("read " + observed.pathsRead.join(", "));
+  if (observed.pathsWritten.length > 0) parts.push("wrote " + observed.pathsWritten.join(", "));
+  parts.push(
+    observed.domains.length > 0 ? "reached " + observed.domains.join(", ") : "reached nothing",
+  );
+  return parts.join("; ");
+}
+
+/** One run's observation, phrased as evidence rather than as a mount. */
+export function observedFor(
+  capability: CapabilityObservation | undefined,
+): ObservedBehaviour | undefined {
+  if (!capability) return undefined;
+  return {
+    pathsRead: capability.pathsRead.slice(0, 6),
+    pathsWritten: capability.pathsWritten.slice(0, 6),
+    domains: capability.domainsReached.slice(0, 6),
+  };
 }

@@ -189,7 +189,9 @@ export async function createApp(
 
   app.get("/api/agents/:id/messages", async (request) => {
     const { id } = agentIdParams.parse(request.params);
-    return { messages: service.getMessages(id) };
+    return {
+      messages: service.getMessages(id, principal(request, config.codifyDefaultUser)),
+    };
   });
 
   app.get("/api/agents/:id/runs", async (request) => {
