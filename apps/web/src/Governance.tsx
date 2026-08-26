@@ -743,8 +743,19 @@ function RefinementCard({
 export default function Governance({
   onError,
   onAgentsChanged,
+  isOperator,
+  principal,
 }: {
   onError: (message: string) => void;
+  /**
+   * Whether this principal may decide governance, as the backend reports it.
+   *
+   * Used only to explain the refusal in advance — the routes refuse it either
+   * way, which is the part that counts. A UI that merely hides the buttons
+   * demonstrates nothing.
+   */
+  isOperator: boolean;
+  principal: string;
   /**
    * Approving a candidate creates an Agent; applying a refinement rewrites
    * another's brief. The Playground holds its own copy of that list, so without
@@ -808,6 +819,18 @@ export default function Governance({
           Rescan observations
         </button>
       </header>
+
+      {!isOperator && (
+        <div className="operator-notice" role="status">
+          <strong>Signed in as {principal} — read only.</strong>
+          <p>
+            Anyone can read the evidence: an audit trail only the auditor can see is worth
+            much less. Approving a task, editing a scope, or applying a learned rule is
+            refused by the control plane, not just hidden here. Switch to an operator to
+            decide.
+          </p>
+        </div>
+      )}
 
       {loading && <p className="muted">Loading…</p>}
 

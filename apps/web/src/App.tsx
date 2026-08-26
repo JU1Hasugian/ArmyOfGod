@@ -9,6 +9,7 @@ import type {
   Message,
   RunTrace,
   SystemInfo,
+  TaskContract,
 } from "./types";
 
 /** Mock principals, as the brief permits. Authorization is server-side. */
@@ -346,6 +347,9 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [system, setSystem] = useState<SystemInfo | null>(null);
+  // Active contracts, so the sidebar can tell a promoted specialist from an
+  // Agent somebody made — and show the scope it was promoted with.
+  const [contracts, setContracts] = useState<TaskContract[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -378,6 +382,23 @@ export default function App() {
     [agents, selectedId],
   );
 
+  // An Agent is a specialist when an active contract names it. Derived from the
+  // contract rather than from the description text, so the label cannot drift
+  // away from what actually governs the Agent.
+  const { ownAgents, specialists } = useMemo(() => {
+    const byAgent = new Map(
+      contracts
+        .filter((contract) => contract.status === "active")
+        .map((contract) => [contract.agentId, contract] as const),
+    );
+    return {
+      ownAgents: agents.filter((agent) => !byAgent.has(agent.id)),
+      specialists: agents
+        .filter((agent) => byAgent.has(agent.id))
+        .map((agent) => ({ agent, contract: byAgent.get(agent.id) as TaskContract })),
+    };
+  }, [agents, contracts]);
+
   const refreshAgents = useCallback(async () => {
     const { agents: next } = await api.listAgents();
     setAgents(next);
@@ -396,7 +417,16 @@ export default function App() {
   }, []);
 
   const bootstrap = useCallback(async () => {
-    await Promise.all([refreshAgents(), api.system().then(setSystem)]);
+    await Promise.all([
+      refreshAgents(),
+      api.system().then(setSystem),
+      api
+        .contracts()
+        .then((result) => setContracts(result.contracts))
+        .catch(() => {
+          /* Governance is optional; the catalogue simply stays flat. */
+        }),
+    ]);
   }, [refreshAgents]);
 
   useEffect(() => {
@@ -441,6 +471,18 @@ export default function App() {
         setError(reason instanceof Error ? reason.message : String(reason)),
       );
   }, [refreshMessages, selectedId, principal]);
+
+  // Whether you may decide governance depends on who you are signed in as, and
+  // the backend is the authority on that — so re-ask it when the principal
+  // changes rather than inferring it in the client.
+  useEffect(() => {
+    void api
+      .system()
+      .then(setSystem)
+      .catch(() => {
+        /* The banner already covers an unreachable control plane. */
+      });
+  }, [principal]);
 
   useEffect(() => {
     if (selected) {
@@ -736,7 +778,16 @@ export default function App() {
           <span>{agents.length}</span>
         </div>
         <nav className="agent-list">
-          {agents.map((agent) => (
+          {/*
+            Split, because the platform stopped moving people between Agents.
+            A specialist receives routed work; you do not open it to use it. It
+            stays selectable — the Starter Kit's lifecycle and the acceptance
+            checklist both require that an Agent can be inspected and tested
+            from the frontend — but it is presented as a catalogue entry rather
+            than as somewhere to start a conversation.
+          */}
+          {ownAgents.length > 0 && <div className="agent-group">Your agents</div>}
+          {ownAgents.map((agent) => (
             <button
               className={"agent-card " + (agent.id === selectedId ? "selected" : "")}
               key={agent.id}
@@ -754,6 +805,39 @@ export default function App() {
               <span className={"mini-dot mini-" + agent.status} />
             </button>
           ))}
+
+          {specialists.length > 0 && (
+            <div className="agent-group">
+              Promoted specialists
+              <span>routed to automatically — no need to open one</span>
+            </div>
+          )}
+          {specialists.map(({ agent, contract }) => (
+            <button
+              className={
+                "agent-card agent-specialist " + (agent.id === selectedId ? "selected" : "")
+              }
+              key={agent.id}
+              onClick={() => {
+                setSelectedId(agent.id);
+                setView("playground");
+                setDelegationNotice(null);
+              }}
+            >
+              <div className="agent-avatar">⚙</div>
+              <div className="agent-card-copy">
+                <strong>{agent.name}</strong>
+                <span className="agent-scope">
+                  v{contract.version} ·{" "}
+                  {contract.scope.domains.length > 0
+                    ? contract.scope.domains.join(", ")
+                    : "no egress"}
+                </span>
+              </div>
+              <span className={"mini-dot mini-" + agent.status} />
+            </button>
+          ))}
+
           {agents.length === 0 && (
             <div className="empty-sidebar">
               <span>◇</span>
@@ -779,7 +863,12 @@ export default function App() {
 
       <main className="main">
         {view === "governance" ? (
-          <Governance onError={setError} onAgentsChanged={() => void refreshAgents()} />
+          <Governance
+            onError={setError}
+            onAgentsChanged={() => void refreshAgents()}
+            isOperator={system?.isOperator === true}
+            principal={principal}
+          />
         ) : (
           <>
         {!system?.arkConfigured || !system?.codexAvailable ? (

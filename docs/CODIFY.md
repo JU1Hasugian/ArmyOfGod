@@ -489,6 +489,7 @@ Every setting has a working default; `npm run poc` needs none of them.
 | `CODIFY_SEED_FIXTURES` | `true` | Seed an observed-run corpus on an empty store. |
 | `WORKSPACE_FIXTURES` | `true` | Copy the mock resource set into every new Agent workspace, so the seeded tasks have files to operate on. |
 | `CODIFY_DEFAULT_USER` | `user-a` | Principal when no `x-codify-user` header is sent. |
+| `CODIFY_OPERATORS` | `operator` | Comma-separated principals allowed to decide governance. Reads are never gated. |
 | `CODIFY_BROKER_IMAGE` | Runtime image | Image for the broker container; the Runtime image already has `node`. |
 | `CODIFY_SECRET_<NAME>` | — | A credential the platform holds. Injected only when a contract's scope names it. |
 
@@ -572,7 +573,7 @@ why. The first runs with `github.com` and the second with `registry.npmjs.org` �
 **neither Agent ever holds both**, which is the confused-deputy shape a single
 multi-tool Agent would have arrived at by accident.
 
-**2:50–3:00 — Close.** `npm run check` green — 238 tests. State one limitation
+**2:50–3:00 — Close.** `npm run check` green — 241 tests. State one limitation
 from §11.
 
 ---
@@ -580,7 +581,7 @@ from §11.
 ## 9. Tests
 
 `npm run check` runs typecheck, the full vitest suite, and both production
-builds. **238 tests across 31 files** (three skipped without live credentials).
+builds. **241 tests across 31 files** (three skipped without live credentials).
 
 | Area | What it proves |
 |---|---|
@@ -871,9 +872,13 @@ and the one-off work left alone.
   contract, and it currently trusts a header the caller writes. A real
   deployment resolves the principal from an IdP; nothing else in the design
   changes.
-- **The governance surface has no role check.** Anyone who can reach the API can
-  approve a candidate, edit a contract's scope, or revoke a domain. Approval and
-  scope editing belong behind an operator role.
+- **Deciding governance is gated; reading it is not.** Approving or rejecting a
+  task, editing a contract's scope, and applying or rejecting a learned rule are
+  refused to anyone outside `CODIFY_OPERATORS` — on the route, before the body
+  is even validated, so a caller who never loads the UI still meets it. Reads
+  stay open on purpose: an audit trail only the auditor can see is worth much
+  less. The residual limitation is the one above — the principal the check reads
+  is asserted rather than authenticated.
 
 ---
 
@@ -992,7 +997,7 @@ test asserting the production-mode error shape.
 |---|---|---|
 | End-to-end middleware behavior | 40% | Routing changes **which Agent and which brief** executes a turn, on three channels that fail in different directions. Enforcement executes at container launch and at the broker, on a network the Agent cannot route around, and a promoted specialist carries its scope even when nothing matches. Budget refuses at admission before a Run exists. All verified against live Ark and real Docker (§10, `docs/SEMANTIC-ROUTING.md` §4–4b). |
 | Technical design and integration | 25% | Reuses `AgentService` and `AgentRunner`; enforcement lives in `ContainerCodexRunner` only. Ten additive record types with backfill, so an older store still loads, and a contract promoted before the semantic channel existed still matches on its fingerprints. `CapabilityScope`, `TaskBudget` and `TaskContract` are the extensible contracts. Coordination adds no execution path of its own — a session turn goes through the ordinary `sendMessage` seam, which is what makes "each participant under its own scope" true rather than aspirational. |
-| Verification and robustness | 20% | 238 tests, including a cooperation-independent network test, credential isolation, fail-closed, forged-scope, delegation fallback, the padding evasion, channel complementarity, principal binding, budget lineage, trace crash-closure, and the coordination turn claim. Redaction before storage; deterministic fallbacks for every model call; bounded retry so a rate limit cannot silently become a policy decision; per-run cleanup. |
+| Verification and robustness | 20% | 241 tests, including a cooperation-independent network test, credential isolation, fail-closed, forged-scope, delegation fallback, the padding evasion, channel complementarity, principal binding, budget lineage, trace crash-closure, and the coordination turn claim. Redaction before storage; deterministic fallbacks for every model call; bounded retry so a rate limit cannot silently become a policy decision; per-run cleanup. |
 | Demo and reproducibility | 15% | One-command startup preserved; seeded corpus makes the flow reproducible at t=0; the live-endpoint test skips cleanly without credentials so `npm run check` is green either way; limitations documented; no hidden manual setup. |
 
 ### Optional-evidence checkboxes

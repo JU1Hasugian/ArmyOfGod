@@ -137,6 +137,17 @@ const envSchema = z.object({
     .transform((value) => value === "true"),
   /** Fallback principal when a request carries no x-codify-user header. */
   CODIFY_DEFAULT_USER: z.string().trim().min(1).max(64).default("user-a"),
+  /**
+   * Principals allowed to decide governance: approve or reject a task, edit a
+   * contract's scope, apply or reject a learned rule.
+   *
+   * Reading the evidence is deliberately not gated — the audit surface being
+   * visible to everyone is most of its value. What is gated is *deciding*,
+   * because approving a candidate mints a contract and editing a scope changes
+   * what an Agent may reach. Comma-separated; a mock identity model, as the
+   * brief permits, with the check on the route rather than in the UI.
+   */
+  CODIFY_OPERATORS: z.string().trim().default("operator"),
   /** Seed the observed-run corpus on first boot so the queue is not empty. */
   CODIFY_SEED_FIXTURES: z
     .enum(["true", "false"])
@@ -242,6 +253,9 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     codifyAutoPromote: env.CODIFY_AUTO_PROMOTE,
     codifyAutoGrantSecrets: env.CODIFY_AUTO_GRANT_SECRETS,
     codifyDefaultUser: env.CODIFY_DEFAULT_USER,
+    codifyOperators: env.CODIFY_OPERATORS.split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
     codifySeedFixtures: env.CODIFY_SEED_FIXTURES,
     workspaceFixtures: env.WORKSPACE_FIXTURES,
     codifyManagedSecrets: readManagedSecrets(environment),

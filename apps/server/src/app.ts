@@ -104,6 +104,38 @@ function principal(request: { headers: Record<string, unknown> }, fallback: stri
   return typeof value === "string" && value.trim() ? value.trim().slice(0, 64) : fallback;
 }
 
+/**
+ * Refuse a governance decision to anyone who is not an operator.
+ *
+ * On the route, not in the UI. Hiding a button is a presentation choice and
+ * proves nothing: the check has to be somewhere the caller cannot reach, or a
+ * curl to the same endpoint walks straight past it. Reading the evidence stays
+ * open — an audit trail only the auditor can see is worth much less — and what
+ * is gated is *deciding*: approving a candidate mints a contract, and editing a
+ * scope changes what an Agent may reach.
+ *
+ * The principal itself is asserted rather than authenticated (see
+ * `docs/CODIFY.md` §11); a real deployment resolves it from an IdP and nothing
+ * else about this changes.
+ */
+function requireOperator(
+  request: { headers: Record<string, unknown> },
+  config: AppConfig,
+): string {
+  const who = principal(request, config.codifyDefaultUser);
+  if (!config.codifyOperators.includes(who)) {
+    throw new HttpError(
+      403,
+      "Only an operator can decide governance. Signed in as " +
+        who +
+        "; operators are " +
+        config.codifyOperators.join(", ") +
+        ".",
+    );
+  }
+  return who;
+}
+
 export async function createApp(
   config: AppConfig,
   service: AgentService,
@@ -151,7 +183,16 @@ export async function createApp(
 
   app.get("/api/auth", async () => ({ required: config.authToken.length > 0 }));
 
-  app.get("/api/system", async () => service.systemInfo());
+  app.get("/api/system", async (request) => ({
+    ...service.systemInfo(),
+    principal: principal(request, config.codifyDefaultUser),
+    // So the UI can show the governance controls as refused rather than
+    // pretending they were never there. The route is the authority either way.
+    isOperator: config.codifyOperators.includes(
+      principal(request, config.codifyDefaultUser),
+    ),
+    operators: config.codifyOperators,
+  }));
 
   app.get("/api/agents", async () => ({ agents: service.listAgents() }));
 
@@ -231,18 +272,22 @@ export async function createApp(
 
   app.post("/api/codify/candidates/:id/approve", async (request, reply) => {
     const { id } = agentIdParams.parse(request.params);
+    // Authorise before validating: a caller who may not use this route should
+    // not be handed the shape of its payload.
+    const operator = requireOperator(request, config);
     const body = approveBody.parse(request.body ?? {});
     const result = await service.approveCandidate(id, {
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.scope !== undefined ? { scope: body.scope } : {}),
       ...(body.budget !== undefined ? { budget: body.budget } : {}),
-      userId: principal(request, config.codifyDefaultUser),
+      userId: operator,
     });
     return reply.code(201).send(result);
   });
 
   app.post("/api/codify/candidates/:id/reject", async (request) => {
     const { id } = agentIdParams.parse(request.params);
+    requireOperator(request, config);
     return { candidate: await service.codify.rejectCandidate(id) };
   });
 
@@ -258,6 +303,7 @@ export async function createApp(
   /** Narrowing is revocation and is always allowed; widening needs a denial. */
   app.patch("/api/codify/contracts/:id", async (request) => {
     const { id } = agentIdParams.parse(request.params);
+    const operator = requireOperator(request, config);
     const body = reviseBody.parse(request.body);
     return {
       contract: await service.codify.reviseContract(
@@ -266,7 +312,7 @@ export async function createApp(
           ...(body.scope !== undefined ? { scope: body.scope } : {}),
           ...(body.budget !== undefined ? { budget: body.budget } : {}),
         },
-        principal(request, config.codifyDefaultUser),
+        operator,
       ),
     };
   });
@@ -364,16 +410,14 @@ export async function createApp(
 
   app.post("/api/codify/refinements/:id/apply", async (request) => {
     const { id } = agentIdParams.parse(request.params);
+    const operator = requireOperator(request, config);
     const body = applyRefinementBody.parse(request.body ?? {});
-    return service.applyRefinement(
-      id,
-      principal(request, config.codifyDefaultUser),
-      body.rule,
-    );
+    return service.applyRefinement(id, operator, body.rule);
   });
 
   app.post("/api/codify/refinements/:id/reject", async (request) => {
     const { id } = agentIdParams.parse(request.params);
+    requireOperator(request, config);
     return { refinement: await service.codify.rejectRefinement(id) };
   });
 

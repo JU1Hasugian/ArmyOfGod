@@ -174,6 +174,10 @@ export interface SystemInfo {
   codifyEnforcing?: boolean;
   codifyMatchThreshold?: number;
   codifyManagedSecrets?: string[];
+  /** Who the backend resolved this request to, and whether they may decide. */
+  principal?: string;
+  isOperator?: boolean;
+  operators?: string[];
 }
 
 /** A ceiling a reviewer set on one governed task. Absent fields are unlimited. */

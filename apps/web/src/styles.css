@@ -2169,3 +2169,43 @@ textarea:focus {
   margin-top: 0.35rem;
   color: var(--muted, #667085);
 }
+
+/* Sidebar: your agents versus the specialists Codify promoted. */
+.agent-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.9rem 0.25rem 0.35rem;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted, #667085);
+}
+.agent-group span {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+.agent-specialist .agent-avatar {
+  background: transparent;
+  border: 1px dashed var(--border, #d5d9e0);
+}
+.agent-scope {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Governance, seen by someone who may read but not decide. */
+.operator-notice {
+  border: 1px solid var(--border, #d5d9e0);
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 1rem;
+  background: var(--surface-muted, rgba(127, 127, 127, 0.06));
+}
+.operator-notice p {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--muted, #667085);
+}
