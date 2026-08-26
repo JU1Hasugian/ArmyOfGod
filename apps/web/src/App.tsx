@@ -513,9 +513,17 @@ export default function App() {
       const result = await api.sendMessage(selected.id, content, forceAdHoc);
       setSplitSession(result.session ?? null);
       if (result.session) {
-        // The request was split, so the later steps are still running on other
-        // Agents. Follow the plan rather than one run's conversation.
+        // The request was split, so it produced no run in *this* conversation:
+        // each step runs on the Agent its own fragment matched. The request
+        // itself still belongs here and is shown, but there is no run to follow
+        // and this Agent is not the one that got busy — the banner tracks the
+        // steps instead.
+        if (selectedIdRef.current === selected.id) {
+          setMessages((current) => [...current, result.message]);
+        }
         void pollSession(result.session.id);
+        await refreshAgents();
+        return;
       }
       if (result.delegatedTo) {
         // The platform recognised the task and handed it to the specialist, so

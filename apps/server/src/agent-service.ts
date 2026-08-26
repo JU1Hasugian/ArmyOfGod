@@ -354,9 +354,26 @@ export class AgentService {
             dispatched.session.id,
             dispatched.session.plan?.length ?? 0,
           );
+          // The work runs elsewhere, but the person asked *here*. Without this
+          // their request vanishes from the conversation they typed it into and
+          // only a banner remains, which reads as the message having been lost.
+          // It carries this turn's runId — the one the route decision names —
+          // even though no Run was created for it, because that is the record
+          // that explains where the request went.
+          const asked: Message = {
+            id: randomUUID(),
+            agentId,
+            runId,
+            role: "user",
+            content: storedPrompt,
+            createdAt: timestamp,
+          };
+          await this.store.mutate((database) => {
+            database.messages.push(asked);
+          });
           turn.end({ attributes: { split: dispatched.session.plan?.length ?? 0 } });
           await tracer.flush();
-          return dispatched;
+          return { ...dispatched, message: asked };
         }
       }
 
