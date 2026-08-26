@@ -469,6 +469,68 @@ direction to fail in.
 > harness produced a clean result, and only *then* did comparing the two linkage
 > rules show the real, smaller defect.
 
+### The whole loop, at the scale of an office
+
+Every measurement above tests a component. This one starts from an **empty
+store** and asks whether the actual claim holds: nothing configured, work
+repeats, a task is detected from that repetition alone, promoted with a brief and
+a scope nobody wrote, and later requests worded differently reach it - while the
+one-off work that fills a real week never promotes and never routes.
+
+It drives the real `CodifyService`, so what passes is the shipped code path.
+
+**1,748 prompts, 500 employees**, activity Zipf-shaped so a handful of people
+generate most of the volume:
+
+| | |
+|---|---|
+| recurring | 360 wordings across 12 families, written by a model that never saw the matcher |
+| long tail | 788 genuinely distinct requests from BigCodeBench and SWE-bench - benchmarks are built *not* to repeat, which makes them a faithful stand-in for one-off work |
+| chatter | 600 ordinary assistant requests, some of which genuinely do recur |
+
+**Results**
+
+| question | answer |
+|---|---|
+| families detected and promoted | **12 of 12**, all by prompt 100 |
+| later wordings reaching the right specialist | **297 / 297 — 100% carryover** |
+| recurring work misrouted to the wrong contract | **0** |
+| long-tail prompts routed to any specialist | **0 / 788** |
+| contracts holding the union of two families' egress | **0** |
+
+**The scopes, none of which anyone wrote:**
+
+```
+Generate release notes from repo     net=["github.com"]           secrets=[]
+Dependency CVE Audit                 net=["registry.npmjs.org"]   secrets=[]
+Warehouse signups report             net=["warehouse.internal"]   secrets=[]
+Incident Postmortem Generation       net=[]                       secrets=[]
+Extract translatable strings         net=[]                       secrets=[]
+...
+```
+
+Three tasks reached three different hosts and got exactly those; the other nine
+reached nothing and got nothing. `secrets=[]` throughout even though the
+release-notes and warehouse runs *were* observed using credentials - the
+auto-grant clamp withheld them, which is the one capability that genuinely
+widens reach.
+
+**Two honest readings of the output.**
+
+The governed share of recurring work reads 64% in the first bucket and 100%
+after - and then 0% in the last five. Those buckets contain **no recurring
+prompts at all**: the corpus emits all 360 by roughly prompt 450, so the tail of
+the stream is pure one-off work. A zero there means "nothing to govern", not a
+regression.
+
+32 of 600 chatter prompts did route, to eight contracts promoted out of the
+chatter itself - patterns like *"send only the season number"* that genuinely
+recur. Detection is not wrong about them; they repeat more than some planted
+families did. Their derived scopes are **empty**, because those runs touched
+nothing, so the contracts are inert. Whether such tasks *should* be
+institutionalised is a judgement about the organisation, not about the matcher -
+see `docs/CODIFY.md` on why promotion is reviewer-gated rather than free.
+
 ---
 
 ## 5. What this does not fix

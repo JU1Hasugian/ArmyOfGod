@@ -728,6 +728,25 @@ Everything else still resumes. A follow-up that does *not* match the contract is
 a correction to what just came back, and that genuinely needs the context - which
 is also exactly the turn the refinement loop harvests.
 
+### 10c. The loop, verified from an empty store
+
+`docs/SEMANTIC-ROUTING.md` carries the full run. In summary: **1,748 prompts,
+500 employees, nothing configured**, driving the real service.
+
+Twelve of twelve task families were detected from repetition alone and promoted
+by prompt 100, each with a scope derived from what its runs had actually
+touched - `github.com`, `registry.npmjs.org`, `warehouse.internal`, and nothing
+at all for the nine tasks that reached nothing. Every one carried `secrets=[]`
+even where credentials had been observed, because the auto-grant clamp withholds
+the one capability that genuinely widens reach.
+
+After promotion, **297 of 297** later wordings reached the right specialist, none
+were misrouted, and **none of the 788 one-off engineering requests** routed
+anywhere. No contract ended up holding the union of two tasks' egress.
+
+That is the product's thesis end to end: repetition in, a brief and a policy out,
+and the one-off work left alone.
+
 ## 11. Known limitations
 
 - **Routing fails open.** A prompt that clears no channel runs ad hoc and
