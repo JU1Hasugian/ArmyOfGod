@@ -432,6 +432,43 @@ promotion fires at the threshold from a natural arrival order, the earliest
 exemplars turn out to be good enough that *every* subsequent wording lands, and
 forty unrelated prompts neither promote nor route.
 
+### Clustering had to stop chaining
+
+Detection grouped observations under **single linkage** - an item joined a
+cluster if it matched *any* member. That makes membership transitive: A matches
+B and B matches C, so A and C land together even when A and C do not match at
+all.
+
+Every streaming test missed this, and could not have caught it. Once a family is
+promoted its later prompts are *routed* instead of feeding detection, so the
+eligible pool never holds several families at once. A real backlog - a week of
+work before anything has been promoted - does.
+
+Measured over 360 prompts spanning twelve unrelated tasks, arriving together:
+
+| linkage | clusters | containing more than one family |
+|---|---|---|
+| single (any member) | 9 | **2** |
+| seed (the cluster's anchor) | 13 | **0** |
+
+A contaminated cluster is not a cosmetic problem. It mints one contract holding
+the **union of those families' scopes** - the confused-deputy shape the whole
+design exists to prevent, arrived at by accident.
+
+Comparing against the cluster's seed makes membership transitive by
+construction: every member matched the same anchor, so a cluster cannot drift
+from what it started as. The cost is order-dependence, which the pass already
+had, and a family occasionally splitting into two clusters - which promotes two
+contracts for one task rather than one contract for two tasks. That is the right
+direction to fail in.
+
+> Found only because a harness bug sent the wrong number the other way first.
+> The scratch corpus stores raw vectors while `PromptObservation.embedding`
+> stores the int8 packing, and feeding one where the other belongs made every
+> pair score 1.00 - which looked exactly like catastrophic chaining. Fixing the
+> harness produced a clean result, and only *then* did comparing the two linkage
+> rules show the real, smaller defect.
+
 ---
 
 ## 5. What this does not fix

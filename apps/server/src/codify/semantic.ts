@@ -410,8 +410,27 @@ export function clusterByMatch<T extends MatchCandidate>(
   const clusters: T[][] = [];
   for (const item of items) {
     if (!item.fingerprint && !item.embedding) continue;
+    // Compared against the cluster's SEED — its first member — and not against
+    // any member.
+    //
+    // "Any member" is single linkage, and single linkage chains: if A matches B
+    // and B matches C, then A and C land together even when A and C do not
+    // match at all. Measured over 360 prompts spanning twelve unrelated tasks,
+    // arriving together as a backlog would: single linkage produced 9 clusters
+    // of which **2 held more than one family**, while comparing against the
+    // seed produced 13, all pure. A contaminated cluster mints one contract
+    // holding the union of those families' scopes — the exact confused-deputy
+    // shape the scope exists to prevent.
+    //
+    // The streaming tests could not have caught it: a promoted family stops
+    // feeding detection, because its later prompts are routed instead, so the
+    // eligible pool never holds several families at once. A real backlog does.
+    //
+    // Comparing against the seed makes membership transitive by construction:
+    // every member matched the same anchor, so a cluster cannot drift away from
+    // what it started as. It costs order-dependence, which the pass already had.
     const existing = clusters.find((members) =>
-      members.some((member) => matchAgainst(member, item, thresholds).matched),
+      matchAgainst(members[0] as T, item, thresholds).matched,
     );
     if (existing) existing.push(item);
     else clusters.push([item]);

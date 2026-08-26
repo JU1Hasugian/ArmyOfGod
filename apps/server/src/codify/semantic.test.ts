@@ -329,3 +329,47 @@ describe("detection clusters real wordings, not just near-duplicates", () => {
     expect(largest.every((member) => WORDINGS.some((text) => member.canonicalForm === canonicalize(text)))).toBe(true);
   });
 });
+
+describe("clustering does not chain across unrelated tasks", () => {
+  /**
+   * Single linkage puts an item in a cluster if it matches *any* member, which
+   * makes membership transitive: A~B and B~C lands A with C even when A and C
+   * do not match. Measured over 360 prompts spanning twelve unrelated tasks
+   * arriving together, that produced 9 clusters of which 2 held more than one
+   * family. A contaminated cluster mints one contract with the union of those
+   * families' scopes, which is the confused-deputy shape the scope prevents.
+   */
+  it("keeps two tasks apart even when a third bridges them", () => {
+    const base = vector(31, 128);
+    // A and C do not match each other; B sits between them and matches both.
+    const a = candidate("alpha task alpha task alpha", packEmbedding(base));
+    const b = candidate("beta bridge beta bridge beta", packEmbedding(nearVector(base, 0.8, 71)));
+    const c = candidate("gamma task gamma task gamma", packEmbedding(nearVector(base, 0.55, 73)));
+
+    const thresholds: MatchThresholds = { fingerprint: 0.65, containment: 0.6, semantic: 0.72 };
+    // The bridge really does match A, and A really does not match C.
+    expect(matchAgainst(a, b, thresholds).matched).toBe(true);
+    expect(matchAgainst(a, c, thresholds).matched).toBe(false);
+
+    const clusters = clusterByMatch([a, b, c], thresholds);
+    const withA = clusters.find((members) => members.includes(a));
+    // C must not be dragged in behind the bridge.
+    expect(withA?.includes(c)).toBe(false);
+  });
+
+  it("still gathers wordings that all match the same anchor", () => {
+    const base = vector(37, 128);
+    const seed = candidate("the governed task", packEmbedding(base));
+    const members = [0.9, 0.88, 0.86, 0.84].map((target, index) =>
+      candidate("wording " + index, packEmbedding(nearVector(base, target, 80 + index))),
+    );
+    const clusters = clusterByMatch([seed, ...members], {
+      fingerprint: 0.65,
+      containment: 0.6,
+      semantic: 0.72,
+    });
+    // Chain-free must not mean scatter-everything.
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]).toHaveLength(5);
+  });
+});

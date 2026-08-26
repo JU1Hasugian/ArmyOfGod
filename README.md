@@ -13,55 +13,73 @@ Volcengine ECS.
 
 ## Codify — the middleware in this repository
 
-This fork adds **Codify**: the platform notices when a task recurs, promotes it
-into a **specialist Agent**, and routes later requests to it.
+**Nobody runs agents with least privilege, because nobody can write the policy.**
 
-> Fifty people ask for "a slide deck for the mid-term meeting" in fifty
-> different wordings, and everyone gets a different answer. Codify clusters those
-> requests, drafts a brief from how the task has actually been done, creates an
-> Agent for it, and hands future requests to that Agent — so person 51 gets the
-> distilled version instead of starting from scratch.
+You cannot specify what a non-deterministic actor may touch before you have seen
+what it touches. So every Agent ships with the union of everything anyone might
+need, and the Starter Kit is explicit that its CPU and memory defaults are not a
+permission model at all.
+
+Codify writes the policy by watching. When it notices the same task recurring, it
+derives that task's capability scope from what those runs actually did - the
+hosts they reached, the paths they wrote, the credentials they used - and
+enforces it at the container boundary. The result is narrower than anything a
+person would have bothered to write, because it is measured rather than
+imagined.
+
+> *Nobody wrote this policy. It is what these runs already did.*
+
+### Why anyone accepts it
+
+A control people route around is worthless, so Codify makes the governed path the
+one people want.
+
+The same observation that yields the policy also yields a **brief**: fifty people
+ask for "a slide deck for the mid-term meeting" in fifty wordings, and the
+platform distils how the task is actually done into an operating procedure, then
+promotes a **specialist Agent** to carry it. Person 51 asks in their own words,
+is handed to the specialist, and gets the distilled version instead of starting
+from scratch.
+
+So the quality half is not a second feature. **It is the adoption mechanism for
+the security half** - people take the governed path because it produces the
+better answer, and least privilege arrives as a side effect they never had to
+think about.
 
 It keeps improving after promotion. When several different people give the
-specialist the same correction — *"use more colour in the headings"* — that stops
-being a preference and becomes a proposed rule. A human approves it, the contract
-is versioned, and the Agent's brief is rewritten so nobody has to ask again.
+specialist the same correction - *"use more colour in the headings"* - that stops
+being a preference and becomes a proposed rule. The contract is versioned and the
+Agent's brief is rewritten, so nobody has to ask again.
 
-The same observed behaviour also yields the task's **permissions**, so a
-specialist runs least-privilege without anyone writing a policy: its own
-`--internal` network with no route off-host, a broker container as the only way
-out, and the workspace mounted read-only except the paths the task actually
-writes to. The broker also holds the Ark key, so the Agent container never sees
-it.
+### What enforcement actually means
 
-Start it with `npm run poc`, then open **Codify governance** in the sidebar. The
-review queue is seeded with observed runs, so there is something to approve
-immediately.
+A promoted specialist runs in its own `--internal` network with no route
+off-host, reaching the outside only through a broker container that allowlists on
+the contract's domains. The workspace is mounted read-only except the paths the
+task actually writes to, so a write anywhere else fails with `EROFS` in the
+kernel. The broker holds the real Ark key, so the Agent container never sees it.
 
-Recognising the task is the part that has to survive contact with real users,
-who neither phrase things identically nor always phrase them honestly. Codify
-matches on three channels at once — a lexical fingerprint, exact **containment**,
-and an **embedding** — and routes if any one of them clears its threshold. They
-fail in opposite directions, which is the point: padding a prompt until the
-fingerprint drops leaves containment at 1.000, and rewording or translating it
-until both lexical channels read 0.00 leaves the embedding at 0.78.
+Recognising the task has to survive contact with real users, who neither phrase
+things identically nor always phrase them honestly. Codify matches on three
+channels - a lexical fingerprint, exact **containment**, and an **embedding** -
+and routes if any one clears its threshold. They fail in opposite directions:
+padding a prompt until the fingerprint drops leaves containment at 1.000, and
+rewording or translating it until both lexical channels read 0.00 leaves the
+embedding at 0.78.
 
 And because the prompt is written by the caller, the scope does not depend on
 recognising it. A promoted specialist runs under **its own contract's scope
 whatever it is asked**, so defeating the matcher costs the brief and gains no
-capability. Routing is a quality mechanism; the Agent's identity is the boundary.
+capability.
 
-Three more controls sit on the same evidence:
+Three further controls sit on the same evidence: a correlated per-Run **trace**, a
+token **budget** enforced at admission, and **shared sessions** where several
+specialists take turns on one goal, each step under its own contract's scope so
+no participant ever holds the union.
 
-- **A correlated trace.** Every Run carries one `traceId`, with the routing
-  decision, the budget check, the Runtime turn and every egress the broker saw
-  nested under it — including the ones it refused.
-- **A token budget.** Spend is recomputed from Run history across the whole
-  contract lineage, so a Run that would start over the ceiling is refused at
-  admission with the same `DenialEvent` an egress block produces.
-- **Shared sessions.** Several specialists take turns on one goal, with each
-  step routed to the Agent whose contract matches it and run under *that* scope —
-  so no participant ever holds the union of everyone's permissions.
+Start it with `npm run poc`, then open **Codify governance** in the sidebar. The
+review queue is seeded with observed runs, so there is something to approve
+immediately.
 
 **[Read the full design, demo script, tests, and limitations →](docs/CODIFY.md)**
 **[How the matcher was measured, broken, and fixed →](docs/SEMANTIC-ROUTING.md)**
