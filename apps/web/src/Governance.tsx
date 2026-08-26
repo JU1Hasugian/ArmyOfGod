@@ -606,6 +606,13 @@ function ContractCard({
             · approved by {contract.createdBy}
             {contract.supersedes ? " · supersedes an earlier version" : ""}
           </p>
+          {contract.reviewNote && (
+            // Promoted without a person, so what the reviewer saw is shown
+            // rather than left implicit — this is the whole of the oversight.
+            <p className="review-note">
+              <span className="eyebrow">Auto-promoted</span> {contract.reviewNote}
+            </p>
+          )}
         </div>
         <span className={"badge badge-" + contract.status}>{contract.status}</span>
       </header>

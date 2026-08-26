@@ -894,7 +894,18 @@ export class CodifyService {
           { scope, userId: AUTO_PROMOTER },
           createAgent,
         );
-        promoted.push(contract);
+        // Record what the reviewer actually said. Oversight after the fact is
+        // only exercisable if there is something to read: "promoted
+        // automatically" tells an operator nothing they can check.
+        const note =
+          review.reason ||
+          "Reviewed as plausible for this task: " +
+            (scope.domains.length ? scope.domains.join(", ") : "no egress") + ".";
+        await this.store.mutate((database) => {
+          const stored = database.contracts.find((entry) => entry.id === contract.id);
+          if (stored) stored.reviewNote = note;
+        });
+        promoted.push({ ...contract, reviewNote: note });
         if (withheld.secrets.length > 0) {
           // Recorded rather than dropped: a capability that was observed and
           // then withheld is precisely what an operator later needs to see

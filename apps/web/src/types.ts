@@ -99,6 +99,7 @@ export interface TaskContract {
   scope: CapabilityScope;
   budget?: TaskBudget;
   status: "active" | "deprecated";
+  reviewNote?: string;
   createdBy: string;
   createdAt: string;
   supersedes?: string;

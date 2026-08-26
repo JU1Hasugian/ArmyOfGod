@@ -2007,3 +2007,17 @@ textarea:focus {
 .turn-cap input {
   width: 62px;
 }
+
+.review-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.review-note .eyebrow {
+  color: var(--purple);
+  flex: none;
+}

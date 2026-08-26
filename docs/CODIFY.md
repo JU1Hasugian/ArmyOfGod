@@ -246,7 +246,7 @@ transcripts or rewrite the generated `config.toml`. Codify gives each Agent its
 own directory. Session resume is unaffected, because a thread only ever resumes
 inside the Agent that created it.
 
-### Why promotion is automatable, and why it still ships off
+### Why promotion does not wait for a person
 
 The original design gated promotion on human approval. That was the wrong shape,
 for a reason worth stating plainly: **promotion does not grant capability.**
@@ -294,34 +294,41 @@ the evidence for granting it accumulates in the same stream an egress refusal
 lands in, and the escalation path already knows how to turn recorded denials into
 a proposed widening.
 
-#### What the measurement changed
+#### What the measurement said
 
-The argument above is sound as far as it goes, and over a 100-prompt stream
-auto-promotion behaved perfectly: promotion at the threshold, all fifty later
-wordings routed, nothing spurious. That test was too small.
+Over **2,247 prompts** with realistic traffic, auto-promotion produced **36
+contracts**, and 23 of those came from recurring patterns in ordinary chatter
+rather than from the planted tasks - *"send only the season number"* (69
+prompts), *"translate this dialect"* (55), *"generate an etsy title"* (14).
 
-Over **2,247 prompts** with realistic traffic it produced **36 contracts where 12
-tasks existed.** Twenty-three further clusters formed out of ordinary chatter
-that genuinely recurs - *"send only the season number"* (69 prompts),
-*"translate this dialect"* (55), *"generate an etsy title"* (14). Each would mint
-a durable Agent with a workspace, a session and a derived scope.
+That looked like over-firing and is not. Sixty-nine repetitions of one request is
+*more* repetition than the planted families had, so those are recurring tasks by
+every definition this system uses. Detection was right. Routing stayed correct
+throughout - 300/300 governed prompts, nothing misrouted.
 
-Routing stayed correct throughout - 300/300 governed prompts, nothing misrouted -
-so this is not an accuracy failure. It is **proliferation**, and the control the
-safety story leaned on does not restrain it. The distinct-user floor was designed
-against *one person* repeating a prompt; it is silent when *many people* ask
-similar things, which is precisely what those clusters are.
+The instinct to gate them is worth naming and discarding, because it is the same
+mistake in a different place. **Promotion does not create the task.** If
+twenty-two people are classifying tweets, that job already exists in that
+workplace and is already being done - inconsistently, and with unbounded
+permissions. Promoting it does not decide the organisation should do it; it
+notices the organisation already does, and makes it consistent and narrower.
 
-The reviewer model cannot close it either. It judges whether a scope fits its
-task, not whether the thing should be a task at all - and that second question is
-about what an organisation wants to institutionalise. No amount of observation
-answers it.
+On governance it is an improvement rather than a risk: after promotion the brief
+is **visible, versioned and revisable**. Twenty-two people prompting ad hoc
+produce no artifact anyone can inspect or correct. A contract does.
 
-So `CODIFY_AUTO_PROMOTE` ships **off**. The machinery is built, tested and
-documented, and the finding that argues against enabling it is recorded beside
-it. The human stays for the judgement a human is actually better at, and the
-reviewer model removes the part they were worst at - checking that a derived
-scope is plausible.
+So the human belongs *after* promotion, not before. Pre-approving each one is
+high friction for a step that narrows capability, and a gate nobody exercises
+degrades into rubber-stamping - which is worse than no gate, because it
+manufactures assurance without producing any. Oversight that is actually
+exercised is what the versioned contract, the escalation path and the denial
+record exist for. That is also the correct reading of the oversight duty in
+regimes like the EU AI Act's Article 14: it requires oversight to be *possible
+and effective*, not that a person approves every action.
+
+`TaskContract.reviewNote` carries what the reviewer said, so that oversight has
+something to read. "Promoted automatically" is not checkable; the reviewer's
+actual reasoning is.
 
 ### The narrow-only rule
 

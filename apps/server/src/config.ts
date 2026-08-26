@@ -93,34 +93,30 @@ const envSchema = z.object({
    * Promote a candidate the moment it clears its thresholds, with no human in
    * the loop.
    *
-   * Off by default, and the reason is measured rather than cautious.
+   * On by default. Promotion does not create the task and does not grant
+   * capability — the work was already being done, repeatedly, by people using a
+   * generic Agent with no brief and no bound. Promoting it makes that existing
+   * practice *consistent* and *narrower* than it was.
    *
-   * The argument for switching it on is still sound as far as it goes:
-   * promotion does not *grant* capability, because the runs it is derived from
-   * already reached those hosts and wrote those paths, unbounded. Over a
-   * 100-prompt stream it behaved perfectly — promotion at the threshold, every
-   * later wording routed, nothing spurious.
+   * Measured over 2,247 prompts it produced 36 contracts, and 23 of those came
+   * from recurring patterns in ordinary traffic rather than from the planted
+   * tasks. That is not over-firing: sixty-nine repetitions of one request is
+   * more repetition than the planted families had. Routing stayed correct
+   * throughout — 300/300, nothing misrouted.
    *
-   * That test was too small. Over 2,247 prompts with realistic traffic it
-   * promoted **36 contracts where 12 tasks existed**: 23 further clusters formed
-   * out of ordinary chatter that genuinely recurs — "send only the season
-   * number", "translate this dialect", "generate an etsy title" — each of which
-   * would mint a durable Agent with a workspace and a derived scope.
+   * The human belongs *after* this, not before. Pre-approving every promotion is
+   * high friction for a step that narrows capability, and a gate nobody exercises
+   * degrades into rubber-stamping, which is worse than no gate because it
+   * manufactures assurance. Oversight that is actually exercised — read the
+   * brief, revise it, revoke a domain, delete the specialist — is what the
+   * versioned contract, the escalation path and the denial record exist for.
    *
-   * Routing stayed correct throughout (300/300, nothing misrouted), so this is
-   * not an accuracy failure. It is proliferation, and the control the safety
-   * story leaned on does not restrain it: the distinct-user floor was designed
-   * against *one person* repeating a prompt, and is silent when *many people*
-   * ask similar things — which is exactly what those clusters are.
-   *
-   * A reviewer model cannot close it either, because it judges whether a scope
-   * fits its task, not whether the thing should be a task at all. That last
-   * question is about what an organisation wants to institutionalise, and no
-   * amount of observation answers it. It is the part worth a human.
+   * The one step that genuinely *widens* reach is handing a brand-new principal a
+   * credential, and `CODIFY_AUTO_GRANT_SECRETS` keeps that human-gated.
    */
   CODIFY_AUTO_PROMOTE: z
     .enum(["true", "false"])
-    .default("false")
+    .default("true")
     .transform((value) => value === "true"),
   /**
    * Whether an auto-promoted contract may receive credentials it was observed

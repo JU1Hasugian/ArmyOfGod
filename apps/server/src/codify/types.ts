@@ -221,6 +221,13 @@ export interface TaskContract {
   /** Absent means unlimited, which is the behaviour every earlier contract has. */
   budget?: TaskBudget;
   status: "active" | "deprecated";
+  /**
+   * What the reviewer said when this was promoted without a person. Stored so
+   * oversight is exercisable rather than nominal: "promoted automatically" is
+   * not something an operator can check, and the reviewer's actual reasoning is.
+   * Absent on contracts a human approved.
+   */
+  reviewNote?: string;
   createdBy: string;
   createdAt: string;
   supersedes?: string;
