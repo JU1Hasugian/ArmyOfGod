@@ -303,6 +303,7 @@ function BudgetPanel({
       {contract.status === "active" && (
         <div className="budget-row">
           <input
+            className="budget-input"
             type="number"
             min={1}
             placeholder="token ceiling"
@@ -311,13 +312,18 @@ function BudgetPanel({
             onChange={(event) => setDraft(event.target.value)}
           />
           <button
+            className="button button-ghost"
             disabled={disabled || busy || !draft}
             onClick={() => apply({ maxTotalTokens: Number(draft) })}
           >
             Set ceiling
           </button>
           {ceiling && (
-            <button disabled={disabled || busy} onClick={() => apply(null)}>
+            <button
+              className="button button-ghost"
+              disabled={disabled || busy}
+              onClick={() => apply(null)}
+            >
               Remove
             </button>
           )}
@@ -578,8 +584,26 @@ function ContractCard({
         <div>
           <strong>{contract.name}</strong>
           <p className="candidate-meta">
-            v{contract.version} · match ≥ {contract.matchThreshold} · approved by{" "}
-            {contract.createdBy}
+            v{contract.version} ·{" "}
+            {/*
+              A single number was honest when there was a single channel. Showing
+              only the fingerprint threshold now understates what has to be
+              cleared, so the summary names the count and the tooltip carries the
+              three figures a reviewer would actually check.
+            */}
+            <span
+              title={
+                "fingerprint ≥ " +
+                contract.matchThreshold +
+                " · containment ≥ " +
+                (contract.containmentThreshold ?? 0.6) +
+                " · semantic ≥ " +
+                (contract.semanticThreshold ?? 0.72)
+              }
+            >
+              three-channel match
+            </span>{" "}
+            · approved by {contract.createdBy}
             {contract.supersedes ? " · supersedes an earlier version" : ""}
           </p>
         </div>

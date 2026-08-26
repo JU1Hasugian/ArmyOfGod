@@ -92,6 +92,8 @@ export interface TaskContract {
   agentId: string;
   matchFingerprints: string[];
   matchThreshold: number;
+  containmentThreshold?: number;
+  semanticThreshold?: number;
   systemPrompt: string;
   refinements: string[];
   scope: CapabilityScope;

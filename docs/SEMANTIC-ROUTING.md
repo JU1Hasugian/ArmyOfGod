@@ -346,6 +346,58 @@ under that contract's scope, so it now costs the brief and not the containment.
 > anything at any threshold tested. The 53% is a stress figure, not an operating
 > one, and quoting it as a false-positive rate would misrepresent both.
 
+### Two fixes that were tried and rejected
+
+Within-family over-matching is the one measured weakness left, so it got two
+serious attempts. Both were validated against the held-out probes *before* being
+built, and both were dropped.
+
+**Contrastive matching with counter-exemplars.** A threshold asks "is this close
+to the task?", which is the wrong question when the confusable cases are close
+too. So: have promotion make one more model call for requests that sit just
+outside the task, store their embeddings on the contract, and require a margin —
+`cos(prompt, nearest exemplar) − cos(prompt, nearest counter) ≥ m`. Twelve
+counter-exemplars per contract, generated from a different instruction than the
+evaluation probes and checked for zero overlap with them.
+
+| rule | recall | near-miss matched |
+|---|---|---|
+| plain threshold 0.78 | 97.8% | 71 / 325 |
+| contrastive, margin 0.00 | 84.7% | 90 / 325 |
+| contrastive, margin 0.08 | 80.3% | 75 / 325 |
+
+The plain threshold dominates it on *both* axes. Auto-generated counter-exemplars
+land close to genuine positives as well as to near-misses, so the margin cuts
+recall faster than it cuts over-matching.
+
+**Per-contract thresholds derived from exemplar cohesion.** A contract whose
+exemplars span its task's phrasing space can afford a strict threshold; one whose
+exemplars cluster in a corner cannot, because a genuine member can sit far from
+every exemplar it happens to hold. Measured cohesion — median nearest-sibling
+cosine — really does vary, 0.822 to 0.937 across the twelve, so the idea is not
+baseless. But `threshold = cohesion − slack` traces almost exactly the same
+recall/precision frontier a single constant does:
+
+| rule | recall | near-miss matched |
+|---|---|---|
+| global 0.76 | 97.8% | 91 / 325 |
+| derived, slack 0.10 | 97.2% | 81 / 325 |
+| global 0.78 | 96.7% | 71 / 325 |
+| derived, slack 0.08 | 94.7% | 59 / 325 |
+
+Marginally better in places, not enough to justify a derived quantity over a
+constant an operator can read and reason about.
+
+**So 0.72 stays** — not because it was the first guess, but because it is the
+best of the alternatives tried, and because raising the global default to chase a
+benchmark number would break routing behaviour verified live on the seeded
+contract. Deployments that want the stricter trade have
+`TaskContract.semanticThreshold` per contract.
+
+> Reporting these is the point. A threshold defended only by the sweep that
+> produced it is a tuned constant; one that survived two principled alternatives
+> is a decision.
+
 ---
 
 ## 5. What this does not fix

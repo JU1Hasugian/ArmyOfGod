@@ -142,6 +142,9 @@ button {
   border-radius: 10px;
   min-height: 38px;
   padding: 0 15px;
+  /* A two-word label in a narrow column otherwise breaks mid-button ("Set /
+     ceiling"), which reads as a layout fault rather than a control. */
+  white-space: nowrap;
   font-weight: 600;
   font-size: 13px;
   cursor: pointer;
@@ -1123,6 +1126,22 @@ textarea:focus {
   justify-content: flex-start;
   gap: 8px;
   margin-bottom: 16px;
+  /*
+   * `.button` deliberately carries no ground of its own, so every variant has to
+   * supply one. This variant sits on the dark sidebar rather than on paper, so
+   * it cannot borrow `.button-ghost` — that pairs a light face with dark text
+   * and inverts here. Without an explicit pair the label inherits the sidebar's
+   * near-white `color` onto the browser's default light button face and the
+   * control becomes invisible.
+   */
+  background: #32322d;
+  color: #f5f3ed;
+  border: 1px solid #3f3f39;
+}
+
+.nav-button:hover:not(:disabled) {
+  background: #3c3c36;
+  border-color: #4a4a43;
 }
 
 .nav-button.nav-active {
@@ -1613,6 +1632,19 @@ textarea:focus {
   color: var(--muted);
 }
 
+.budget-input {
+  /* Bounded so the flex row does not hand the whole width to the field and
+     squeeze the buttons beside it. */
+  flex: 0 1 160px;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+}
+
 .evidence-row {
   display: flex;
   align-items: center;
@@ -1651,6 +1683,19 @@ textarea:focus {
   color: var(--muted);
   margin-left: auto;
   margin-right: 12px;
+  cursor: pointer;
+  /* The composer row is flex, so without this the label is a shrinkable item
+     and "Run ad-hoc" breaks across three lines beside a stretched checkbox. */
+  white-space: nowrap;
+  flex: none;
+}
+
+.adhoc-toggle input {
+  /* Same reason: a flex child with no basis gets stretched by the row. */
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin: 0;
   cursor: pointer;
 }
 
