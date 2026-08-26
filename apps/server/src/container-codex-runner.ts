@@ -8,6 +8,7 @@ import { BrokerSession } from "./codify/broker-session.js";
 import {
   diffWorkspace,
   pathsNamedByCommands,
+  pathsRefusedByOutput,
   snapshotWorkspace,
 } from "./codify/workspace-diff.js";
 import type { BrokerEvent, CapabilityScope } from "./codify/types.js";
@@ -38,6 +39,7 @@ interface ParsedEvents {
   usage: RunUsage | null;
   errors: string[];
   commands: string[];
+  outputs: string[];
 }
 
 export function containerName(agentId: string, instanceId = "default"): string {
@@ -246,6 +248,7 @@ export class ContainerCodexRunner implements AgentRunner {
     // read set can be widened by what the commands named — `atime` stops
     // recording reads under `relatime` after the first one.
     const commandLog: string[] = [];
+    const outputLog: string[] = [];
     const secretNames = binding.scope.secrets.filter(
       (name) => this.config.codifyManagedSecrets[name] !== undefined,
     );
@@ -300,6 +303,7 @@ export class ContainerCodexRunner implements AgentRunner {
         pathsWritten,
         pathsRead,
         secretsGranted: secretNames,
+        pathsRefused: pathsRefusedByOutput(outputLog),
       });
     };
 
@@ -316,6 +320,7 @@ export class ContainerCodexRunner implements AgentRunner {
         // The container receives a per-run placeholder, never the real Ark key.
         { ARK_API_KEY: session.runToken, ...secretValues },
         commandLog,
+        outputLog,
       );
     } finally {
       await publishEvidence();
@@ -332,6 +337,7 @@ export class ContainerCodexRunner implements AgentRunner {
     // Shared by reference with the caller's evidence step, which runs after
     // this returns and needs the commands the turn reported.
     commandLog: string[] = [],
+    outputLog: string[] = [],
   ): Promise<RunnerResult> {
     const child = spawn(
       this.config.containerEngine,
@@ -363,6 +369,7 @@ export class ContainerCodexRunner implements AgentRunner {
       usage: null,
       errors: [],
       commands: commandLog,
+      outputs: outputLog,
     };
     let stdout = "";
     let stderr = "";

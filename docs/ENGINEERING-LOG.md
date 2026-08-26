@@ -26,7 +26,7 @@ answer, and least privilege arrives as a side effect.
 Read in this order: `README.md` → `docs/CODIFY.md` (design) →
 `docs/SEMANTIC-ROUTING.md` (all measurement).
 
-**Where things stand.** Ten mechanisms, all implemented and enforced; 242 tests
+**Where things stand.** Ten mechanisms, all implemented and enforced; 246 tests
 across 31 files, of which 3 skip without live credentials; `npm run check` green
 (typecheck + suite + both production builds). Every headline claim is measured
 against data the author did not write, and §9 lists what is not.
@@ -410,11 +410,43 @@ working, on evidence that should never have reached it.
 
 ---
 
+**Enforcement, finally exercised rather than asserted.** Docker reached WSL, so
+the container path ran for the first time on this machine, and three claims that
+had only ever been unit-tested were watched happening:
+
+| claim | evidence |
+|---|---|
+| egress refused | `open.er-api.com` blocked while the run completed on the allowed host; the agent's own output recorded the second source as unreachable |
+| write refused | `kind=path`, `finance/archive-copy.md`, and the directory unchanged |
+| budget refused | HTTP 429 at admission, `kind=budget`, before the Run existed |
+
+The write case exposed a gap worth recording. Enforcement was real — the mount
+is read-only and the kernel ends it — but **nothing recorded that it had
+happened.** Egress denials arrive from the broker, a process that can be asked
+what it blocked; the filesystem boundary has no such process, so the governance
+view showed a task blocked from writing outside its scope as though nothing had
+occurred. `kind: "path"` had existed in the type since the beginning and was
+never once written.
+
+The refusal is now read back out of the command output that reported it, which
+is deliberately a weaker signal than the broker's log and is treated as one: it
+is evidence *that* a write was refused, never an authority on what the task
+intended, and it grants nothing, so a false positive costs a spurious row rather
+than a capability.
+
+The `ro` half of a scope was also relabelled rather than enforced. The mount
+enforces the **write** set; everything in the workspace stays readable whatever
+the scope lists. Those entries are the observed read set — evidence, not a
+restriction — and the UI had been printing them as "readable", which claimed a
+boundary that is not applied.
+
+---
+
 ## 7. Verification surface
 
 | test | proves | how to run |
 |---|---|---|
-| `npm run check` | 242 tests, typecheck, both builds | `npm run check` |
+| `npm run check` | 246 tests, typecheck, both builds | `npm run check` |
 | `semantic.live.test.ts` | recognition against a real Ark endpoint | `ARK_API_KEY` + `ARK_EMBED_MODEL`; see §10 |
 | `planner.live.test.ts` | **8/8 split, 8/8 both halves, 8/8 ordering, 0/8 false splits** over four runs | `ARK_API_KEY` + `ARK_MODEL`; see §10 |
 | live-demo (49 checks) | the policy **binds** — real Docker, real Codex, derived scope enforced, `ab.chatgpt.com` refused, budget 429, trace, two specialists never sharing a scope | scratch harness, needs a container engine |

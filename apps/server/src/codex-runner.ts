@@ -12,6 +12,7 @@ import type {
 import {
   diffWorkspace,
   pathsNamedByCommands,
+  pathsRefusedByOutput,
   snapshotWorkspace,
 } from "./codify/workspace-diff.js";
 
@@ -33,6 +34,14 @@ export interface ParsedEvents {
    * for every run after the first. `cat finance/NOTES.md` is unambiguous.
    */
   commands: string[];
+  /**
+   * What those commands printed.
+   *
+   * Kept only to notice the kernel refusing a write — a read-only mount says so
+   * in the output of the command that failed, and there is no other trace of it
+   * by the time the run settles.
+   */
+  outputs: string[];
 }
 
 export function buildCodexArgs(
@@ -76,6 +85,9 @@ export function parseCodexEventLine(line: string, parsed: ParsedEvents): void {
     }
     if (item.type === "command_execution" && typeof item.command === "string") {
       parsed.commands.push(item.command);
+      if (typeof item.aggregated_output === "string") {
+        parsed.outputs.push(item.aggregated_output.slice(0, 8_000));
+      }
     }
   }
 
@@ -185,6 +197,7 @@ export class CodexRunner implements AgentRunner {
       usage: null,
       errors: [],
       commands: [],
+      outputs: [],
     };
     let stdout = "";
     let stderr = "";
@@ -284,6 +297,7 @@ export class CodexRunner implements AgentRunner {
           pathsWritten,
           pathsRead,
           secretsGranted: [],
+          pathsRefused: pathsRefusedByOutput([...parsed.outputs, stderr]),
         });
       }
     }

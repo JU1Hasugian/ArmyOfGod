@@ -933,6 +933,27 @@ export class CodifyService {
         at: event.at,
       }));
 
+    // The filesystem half of the same boundary. A refused write leaves no
+    // broker event because no broker is involved — the mount is read-only and
+    // the kernel ends it — so without this a task blocked from writing outside
+    // its scope produced enforcement and no evidence of enforcement.
+    for (const refused of evidence.pathsRefused ?? []) {
+      denials.push({
+        id: randomUUID(),
+        runId: run.id,
+        agentId: run.agentId,
+        ...(decision.contractId ? { contractId: decision.contractId } : {}),
+        ...(decision.contractVersion
+          ? { contractVersion: decision.contractVersion }
+          : {}),
+        kind: "path",
+        target: redactValue(refused),
+        reason: "Path is outside the contract's writable scope; the mount is read-only.",
+        outcome: "blocked" as const,
+        at: now(),
+      });
+    }
+
     const observation: CapabilityObservation = {
       runId: run.id,
       agentId: run.agentId,

@@ -185,6 +185,23 @@ export interface RunEvidence {
   pathsWritten: string[];
   pathsRead: string[];
   secretsGranted: string[];
+  /**
+   * Writes the kernel refused, because the path was outside the contract's
+   * writable set.
+   *
+   * Egress denials arrive from the broker, which is a process that can be asked
+   * what it blocked. The filesystem boundary has no such process: the workspace
+   * is mounted read-only, a write to it fails with `EROFS`, and the refusal is
+   * over before anything in this codebase could observe it. The enforcement was
+   * real and the evidence was missing — the governance view showed a task
+   * blocked from writing outside its scope as though nothing had happened.
+   *
+   * So the refusal is read back out of the command output that reported it.
+   * That is a weaker signal than the broker's own log and is treated as one:
+   * it is evidence *that* a write was refused, never an authority on what the
+   * task intended.
+   */
+  pathsRefused: string[];
 }
 
 export interface RunnerRequest {

@@ -157,3 +157,43 @@ export function pathsNamedByCommands(
   }
   return [...found].sort();
 }
+
+/** How a read-only mount announces itself, across shells and runtimes. */
+const READ_ONLY_MARKERS = [
+  "read-only file system",
+  "readonly file system",
+  "erofs",
+];
+
+/**
+ * Paths a run was refused permission to write.
+ *
+ * Scans command output for the kernel's read-only complaint and recovers the
+ * path it named. `cp: cannot create regular file './finance/x.md': Read-only
+ * file system` is unambiguous about both facts.
+ *
+ * Best effort by construction. A refusal reported in some other wording is
+ * missed, and a missed one costs a row in the denials table rather than a
+ * boundary — the write already failed in the kernel either way. Nothing here
+ * grants anything, so a false positive costs a spurious record and no
+ * capability.
+ */
+export function pathsRefusedByOutput(chunks: string[]): string[] {
+  const refused = new Set<string>();
+  for (const chunk of chunks) {
+    for (const line of chunk.split(/\r?\n/)) {
+      const lowered = line.toLowerCase();
+      if (!READ_ONLY_MARKERS.some((marker) => lowered.includes(marker))) continue;
+      // The path is usually the quoted operand of the failing command.
+      const quoted = line.match(/['"`]([^'"`]+)['"`]/);
+      const candidate = quoted?.[1] ?? line.match(/(\.{0,2}\/[\w.\-/]+)/)?.[1];
+      if (!candidate) continue;
+      const cleaned = candidate
+        .replace(/^\/workspace\//, "")
+        .replace(/^\.\//, "")
+        .trim();
+      if (cleaned) refused.add(cleaned);
+    }
+  }
+  return [...refused].sort();
+}

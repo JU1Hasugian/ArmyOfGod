@@ -308,18 +308,22 @@ function RunEvidence({ run, enforcing }: { run: AgentRun; enforcing: boolean }) 
             )}
           </span>
           {/*
-            Shown because the narrowing is the whole argument: a task that reads
-            one directory and writes one other is the evidence that nobody had
-            to write this policy. Listing only the writable half hid it.
+            Labelled "reads", not "readable". The mount enforces the *write*
+            set — the workspace goes in read-only and writable paths are layered
+            back over it — so everything in the workspace is readable whatever
+            this lists. These entries are the observed read set: evidence of
+            what the task actually opens, which is what makes the derived write
+            scope legible. Calling them "readable" implied a restriction the
+            boundary does not apply.
           */}
-          <span>
-            readable:{" "}
+          <span title="Observed reads. The whole workspace is readable; the mount enforces writes.">
+            reads:{" "}
             {codify.scope.paths.filter((entry) => entry.mode === "ro").length > 0 ? (
               codify.scope.paths
                 .filter((entry) => entry.mode === "ro")
                 .map((entry) => <code key={entry.path}>./{entry.path}</code>)
             ) : (
-              <em>none beyond the workspace</em>
+              <em>nothing recorded</em>
             )}
           </span>
         </div>
