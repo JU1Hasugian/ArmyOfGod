@@ -538,7 +538,7 @@ from §11.
 ## 9. Tests
 
 `npm run check` runs typecheck, the full vitest suite, and both production
-builds. **181 tests across 21 files** (one skipped without an embedding endpoint).
+builds. **184 tests across 22 files** (one skipped without an embedding endpoint).
 
 | Area | What it proves |
 |---|---|
@@ -696,6 +696,37 @@ read-only workspace mount and `--internal` network are what remain. The
 enforcement evidence above was collected *with Codex's sandbox switched off*.
 
 ---
+
+### One specialist, many people
+
+A promoted specialist is a single Agent that everyone routed to it executes on,
+and that turned out to matter more than it looks. It held **one Codex thread for
+all of them**, so one person's turn resumed another's conversation and ran
+against their accumulated context.
+
+The consequence was measured on the running platform rather than reasoned about.
+A specialist carrying 26 turns on one thread replied *"Done. `./out/RELEASE.md`
+has the release notes"* and produced no file - five times running. The same task,
+under the identical scope and mounts, on a specialist with a fresh thread wrote
+its artefact correctly. It was answering from the memory of having done it
+before.
+
+Two changes, and the second is the interesting one:
+
+**Threads are keyed by principal.** `Agent.codexThreads` maps a principal to its
+own thread, so nobody resumes anybody else's conversation or sees their context.
+A store written before this keeps its single thread, which is adopted by whoever
+arrives first rather than discarded, and does not become everyone's.
+
+**A recognised task starts fresh.** When routing matches a contract, the turn is
+a *new instance of the task*, not a continuation of the last one - so it gets a
+new thread. For a repeated job, continuity is a liability: the specialist's value
+is its brief and its workspace, both of which persist, not a conversation that
+accumulates stale claims about what has already been done.
+
+Everything else still resumes. A follow-up that does *not* match the contract is
+a correction to what just came back, and that genuinely needs the context - which
+is also exactly the turn the refinement loop harvests.
 
 ## 11. Known limitations
 

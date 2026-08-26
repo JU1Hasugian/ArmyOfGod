@@ -26,7 +26,23 @@ export interface Agent {
   instructions: string;
   status: AgentStatus;
   workspacePath: string;
+  /**
+   * The Codex thread the *last* run used. Kept so a store written by an earlier
+   * build still opens, and so `/api/agents` keeps its existing shape.
+   */
   codexThreadId: string | null;
+  /**
+   * One Codex thread per principal, rather than one per Agent.
+   *
+   * A promoted specialist is shared by everyone routed to it, so a single
+   * thread means one person's turn resumes another's conversation — and after
+   * enough turns the Agent answers from that accumulated memory instead of
+   * doing the work. That was measured, not theorised: a specialist with 26 runs
+   * on one thread replied "Done, ./out/RELEASE.md has the release notes" and
+   * wrote nothing, while a specialist with a fresh thread performed the
+   * identical task correctly under the identical scope.
+   */
+  codexThreads?: Record<string, string>;
   lastError: string | null;
   createdAt: string;
   updatedAt: string;

@@ -24,6 +24,42 @@ import { WorkspaceManager } from "./workspace.js";
 
 const now = () => new Date().toISOString();
 
+/**
+ * Which Codex thread this turn should continue, if any.
+ *
+ * Two decisions, and the second is the one that fixes a measured bug.
+ *
+ * **Per principal.** A promoted specialist is shared by everyone routed to it,
+ * so a single thread per Agent means one person's turn resumes another's
+ * conversation and runs against their context. Threads are keyed by the
+ * principal instead.
+ *
+ * **A recognised task starts fresh.** When routing matches a contract, this
+ * turn is a *new instance of the task*, not a continuation of the last one —
+ * so it gets a new thread. Resuming there is actively harmful: a specialist
+ * carrying 26 turns of history replied "Done, `./out/RELEASE.md` has the
+ * release notes" and wrote nothing, answering from memory of having done it
+ * before, while the same task under the same scope on a fresh thread ran
+ * correctly. Continuity is a liability for a repeated job.
+ *
+ * Everything else resumes: a follow-up that does *not* match the contract is a
+ * correction to what just came back, and that genuinely needs the context.
+ * Ordinary chat with a generic Agent is unaffected.
+ */
+function resumeThread(
+  agent: Agent,
+  userId: string,
+  decision: RouteDecision | undefined,
+): string | null {
+  if (decision?.decision === "routed") return null;
+  const perPrincipal = agent.codexThreads?.[userId];
+  if (perPrincipal) return perPrincipal;
+  // A store written before threads were per-principal has one shared thread.
+  // Honour it for the principal who arrives first rather than discarding the
+  // conversation, and it becomes theirs from then on.
+  return agent.codexThreads ? null : agent.codexThreadId;
+}
+
 export class AgentService {
   private readonly activeExecutions = new Map<string, Promise<void>>();
   private readonly cancellationRequests = new Set<string>();
@@ -376,6 +412,8 @@ export class AgentService {
       rawPrompt: prompt,
       tracer,
       turnSpanId: turn.id,
+      userId,
+      threadId: resumeThread(agentAtStart, userId, decision),
       ...(binding ? { binding } : {}),
       ...(decision ? { decision } : {}),
     });
@@ -588,6 +626,8 @@ export class AgentService {
       rawPrompt: string;
       tracer: RunTracer;
       turnSpanId: string;
+      userId: string;
+      threadId: string | null;
       binding?: RunnerScopeBinding;
       decision?: RouteDecision;
     },
@@ -679,7 +719,7 @@ export class AgentService {
         // The Agent is the intended recipient of the raw prompt; the store is
         // not. This is the only place the unredacted text is used.
         prompt: context.rawPrompt,
-        threadId: agentAtStart.codexThreadId,
+        threadId: context.threadId,
         ...(context.binding ? { codify: context.binding } : {}),
         onEvidence: (collected) => {
           evidence = collected;
@@ -704,6 +744,9 @@ export class AgentService {
         });
         agent.status = "ready";
         agent.codexThreadId = result.threadId;
+        if (result.threadId) {
+          agent.codexThreads = { ...(agent.codexThreads ?? {}), [context.userId]: result.threadId };
+        }
         agent.lastError = null;
         agent.updatedAt = completedAt;
       });
