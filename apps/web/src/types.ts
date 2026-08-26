@@ -21,6 +21,9 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   createdAt: string;
+  userId?: string;
+  /** The specialist that ran this turn, when the conversation did not. */
+  executedByAgentId?: string;
 }
 
 export interface CapabilityScope {
@@ -55,6 +58,8 @@ export interface RunCodifySummary {
   domainsReached: string[];
   delegatedFromAgentId?: string;
   delegatedFromAgentName?: string;
+  delegatedToAgentId?: string;
+  delegatedToAgentName?: string;
 }
 
 export interface TaskCandidate {

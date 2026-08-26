@@ -2151,3 +2151,21 @@ textarea:focus {
   color: var(--purple);
   flex: none;
 }
+
+/* Who actually ran a turn, when the conversation routed it elsewhere. */
+.message-router {
+  font-size: 0.75rem;
+  letter-spacing: 0.02em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid var(--border, #d5d9e0);
+  color: var(--muted, #667085);
+  white-space: nowrap;
+}
+
+.evidence-caveat {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  margin-top: 0.35rem;
+  color: var(--muted, #667085);
+}

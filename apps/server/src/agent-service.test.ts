@@ -156,6 +156,78 @@ describe("Agent lifecycle", () => {
     expect(service.getMessages(agent.id, "someone-new")).toHaveLength(2);
   });
 
+  /**
+   * The conversation is where the person typed; execution is wherever the
+   * platform routed the work. Moving the reader to the specialist fragmented
+   * their history and made a correction typed in the "wrong" place vanish.
+   */
+  it("files a delegated turn in the conversation it was typed into", async () => {
+    const { service, store } = await makeServiceWithStore();
+    const desk = await service.createAgent({ name: "General assistant" });
+    const specialist = await service.createAgent({ name: "Specialist" });
+
+    // Stand in for a promoted specialist without driving the whole promotion
+    // path: the transcript behaviour under test is independent of it.
+    const { run } = await service.sendMessage(desk.id, "do the thing", { userId: "user-a" });
+    await expect.poll(() => service.getRun(run.id).status).toBe("completed");
+    await store.mutate((database) => {
+      for (const message of database.messages) {
+        if (message.role === "assistant") message.executedByAgentId = specialist.id;
+      }
+    });
+
+    // Both turns are filed under the conversation, not the specialist.
+    expect(service.getMessages(desk.id, "user-a")).toHaveLength(2);
+    expect(service.getMessages(specialist.id, "user-a")).toHaveLength(0);
+  });
+
+  it("sends a follow-up to whoever answered last, not to the general Agent", async () => {
+    const { service, store } = await makeServiceWithStore();
+    const desk = await service.createAgent({ name: "General assistant" });
+    const specialist = await service.createAgent({ name: "Specialist" });
+
+    const first = await service.sendMessage(desk.id, "do the thing", { userId: "user-a" });
+    await expect.poll(() => service.getRun(first.run.id).status).toBe("completed");
+    await store.mutate((database) => {
+      for (const message of database.messages) {
+        if (message.role === "assistant") message.executedByAgentId = specialist.id;
+      }
+    });
+
+    // A correction: short, refers to what was just produced, names no target.
+    const second = await service.sendMessage(desk.id, "make it shorter", { userId: "user-a" });
+    await expect.poll(() => service.getRun(second.run.id).status).toBe("completed");
+    expect(service.getRun(second.run.id).agentId).toBe(specialist.id);
+
+    // A self-contained request does not inherit the specialist.
+    const third = await service.sendMessage(
+      desk.id,
+      "Audit the dependencies in ./repo and write findings to ./reports/audit.md",
+      { userId: "user-a" },
+    );
+    await expect.poll(() => service.getRun(third.run.id).status).toBe("completed");
+    expect(service.getRun(third.run.id).agentId).toBe(desk.id);
+  });
+
+  it("keeps one principal's continuity out of another's", async () => {
+    const { service, store } = await makeServiceWithStore();
+    const desk = await service.createAgent({ name: "General assistant" });
+    const specialist = await service.createAgent({ name: "Specialist" });
+
+    const first = await service.sendMessage(desk.id, "do the thing", { userId: "user-a" });
+    await expect.poll(() => service.getRun(first.run.id).status).toBe("completed");
+    await store.mutate((database) => {
+      for (const message of database.messages) {
+        if (message.role === "assistant") message.executedByAgentId = specialist.id;
+      }
+    });
+
+    // user-b has no history here, so the same words start fresh on the desk.
+    const other = await service.sendMessage(desk.id, "make it shorter", { userId: "user-b" });
+    await expect.poll(() => service.getRun(other.run.id).status).toBe("completed");
+    expect(service.getRun(other.run.id).agentId).toBe(desk.id);
+  });
+
   it("atomically accepts only one concurrent run per Agent", async () => {
     let finish!: (result: RunnerResult) => void;
     const pending = new Promise<RunnerResult>((resolve) => {

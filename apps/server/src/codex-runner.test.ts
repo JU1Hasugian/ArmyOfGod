@@ -101,18 +101,38 @@ describe("host-process runner evidence", () => {
     temporaryDirectories.push(root);
     const workspace = path.join(root, "workspace");
     const { mkdir } = await import("node:fs/promises");
-    await mkdir(workspace, { recursive: true });
+    await mkdir(path.join(workspace, "data"), { recursive: true });
+    await writeFile(path.join(workspace, "data", "in.csv"), "a,b\n1,2\n", "utf8");
 
-    // A stand-in for Codex: writes a file, then speaks the protocol.
+    // A stand-in for Codex: reads a file, writes a file, then speaks the
+    // protocol. The event lines live in their own file so the script needs no
+    // nested quoting.
+    const events = path.join(root, "events.jsonl");
+    await writeFile(
+      events,
+      [
+        JSON.stringify({ type: "thread.started", thread_id: "t-1" }),
+        JSON.stringify({
+          type: "item.completed",
+          item: { type: "command_execution", command: "/bin/bash -lc cat data/in.csv" },
+        }),
+        JSON.stringify({
+          type: "item.completed",
+          item: { type: "agent_message", text: "Done." },
+        }),
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
     const fakeCodex = path.join(root, "fake-codex.sh");
     await writeFile(
       fakeCodex,
       [
         "#!/usr/bin/env bash",
         'mkdir -p "$PWD/out"',
-        'printf \'summary\' > "$PWD/out/report.md"',
-        `echo '{"type":"thread.started","thread_id":"t-1"}'`,
-        `echo '{"type":"item.completed","item":{"type":"agent_message","text":"Done."}}'`,
+        'printf summary > "$PWD/out/report.md"',
+        'cat ' + JSON.stringify(events),
         "",
       ].join("\n"),
       "utf8",
@@ -143,6 +163,9 @@ describe("host-process runner evidence", () => {
     expect(result.output).toBe("Done.");
     expect(evidence).not.toBeNull();
     expect(evidence!.pathsWritten).toContain("out/report.md");
+    // `cat` named an existing file, so it counts as a read even though
+    // `relatime` may never have moved its atime.
+    expect(evidence!.pathsRead).toContain("data/in.csv");
     // No broker and no managed secret on this path — empty, not absent.
     expect(evidence!.brokerEvents).toEqual([]);
     expect(evidence!.secretsGranted).toEqual([]);

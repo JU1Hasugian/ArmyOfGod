@@ -740,7 +740,19 @@ function RefinementCard({
   );
 }
 
-export default function Governance({ onError }: { onError: (message: string) => void }) {
+export default function Governance({
+  onError,
+  onAgentsChanged,
+}: {
+  onError: (message: string) => void;
+  /**
+   * Approving a candidate creates an Agent; applying a refinement rewrites
+   * another's brief. The Playground holds its own copy of that list, so without
+   * this it keeps showing the brief as it was before the rule was added, with
+   * nothing on screen to say it is stale.
+   */
+  onAgentsChanged?: () => void;
+}) {
   const [candidates, setCandidates] = useState<TaskCandidate[]>([]);
   const [contracts, setContracts] = useState<TaskContract[]>([]);
   const [denials, setDenials] = useState<DenialEvent[]>([]);
@@ -760,6 +772,7 @@ export default function Governance({ onError }: { onError: (message: string) => 
           api.sessions(),
         ]);
       setAgents((await api.listAgents()).agents);
+      onAgentsChanged?.();
       setCandidates(candidateResult.candidates);
       setContracts(contractResult.contracts);
       setDenials(denialResult.denials);
@@ -770,7 +783,7 @@ export default function Governance({ onError }: { onError: (message: string) => 
     } finally {
       setLoading(false);
     }
-  }, [onError]);
+  }, [onError, onAgentsChanged]);
 
   useEffect(() => {
     void refresh();

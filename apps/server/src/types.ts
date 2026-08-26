@@ -64,6 +64,17 @@ export interface Message {
    * those records stay visible to everyone rather than disappearing.
    */
   userId?: string;
+  /**
+   * The Agent that actually ran this turn, when it is not the one the message
+   * is filed under.
+   *
+   * `agentId` is the *conversation* — where the person typed. This is the
+   * *execution* — the specialist the platform routed the work to. They were the
+   * same field once, which meant a delegated turn was filed in the specialist's
+   * transcript and vanished from the conversation it was typed into. Absent
+   * when the conversation agent ran the turn itself.
+   */
+  executedByAgentId?: string;
 }
 
 export interface RunUsage {
@@ -85,13 +96,32 @@ export interface RunCodifySummary {
   scope?: CapabilityScope;
   denials: number;
   domainsReached: string[];
-  /** Set when the turn was handed to a promoted specialist Agent. */
+  /**
+   * Set when the turn was handed to a promoted specialist Agent.
+   *
+   * Both ends are recorded because the conversation no longer moves: the
+   * reader stays in the Agent they typed at, so a message naming only the
+   * origin cannot say where the work went.
+   */
   delegatedFromAgentId?: string;
   delegatedFromAgentName?: string;
+  delegatedToAgentId?: string;
+  delegatedToAgentName?: string;
 }
 
 export interface AgentRun {
   id: string;
+  /**
+   * The conversation this run answers, when it is not the Agent that ran it.
+   *
+   * `agentId` is the specialist that executed the turn — its workspace, its
+   * scope, its budget lineage. But the person typed somewhere else, and the
+   * transcript they are reading has to be able to find the evidence for its
+   * own turns. Without this, reopening a conversation showed the newest run
+   * *that Agent* happened to own, which after a delegation is some older
+   * ungoverned turn: a governed answer captioned "no contract matched".
+   */
+  conversationAgentId?: string;
   agentId: string;
   status: RunStatus;
   /** Redacted at the request boundary. The raw prompt is never persisted. */

@@ -117,3 +117,43 @@ export function diffWorkspace(
     pathsRead: [...new Set(read)].sort(),
   };
 }
+
+/**
+ * Workspace paths named by the shell commands a run reported executing.
+ *
+ * The filesystem is a poor witness to reads. `atime` is the only durable trace
+ * and `relatime` — the default on virtually every Linux mount — stops updating
+ * it once it is newer than `mtime`, so only a run's *first* read of a file
+ * leaves a mark. Derived scopes then omit the very inputs the task depends on,
+ * and a contract ends up granting write access to its output directory while
+ * denying read access to the data it summarises: a policy that would break the
+ * task it was derived from.
+ *
+ * Codex reports each command it runs, and `cat finance/NOTES.md` says plainly
+ * what was read. This extracts path-shaped tokens and keeps only those that
+ * exist in the workspace, so a token that merely looks like a path cannot widen
+ * anything. It is a *supplement* to the `atime` signal, unioned with it, never
+ * a replacement — a run that reads a file through an editor rather than a shell
+ * still leaves only the `atime` trace.
+ *
+ * Deliberately not a shell parser. It is a conservative reader of text that
+ * happens to be a command, and it grants nothing on its own: the caller still
+ * applies the frequency floor, and reads are the narrowest thing a scope can
+ * carry.
+ */
+export function pathsNamedByCommands(
+  commands: string[],
+  present: WorkspaceSnapshot,
+): string[] {
+  const found = new Set<string>();
+  for (const command of commands) {
+    // Split on shell punctuation and quoting, keeping path characters.
+    for (const raw of command.split(/[\s'"`;|&()<>]+/)) {
+      if (!raw) continue;
+      const token = raw.replace(/^\.\//, "").replace(/[,:]+$/, "");
+      if (!token || token.startsWith("-")) continue;
+      if (present.has(token)) found.add(token);
+    }
+  }
+  return [...found].sort();
+}

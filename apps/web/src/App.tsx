@@ -212,7 +212,7 @@ function SplitBanner({
   );
 }
 
-function RunEvidence({ run }: { run: AgentRun }) {
+function RunEvidence({ run, enforcing }: { run: AgentRun; enforcing: boolean }) {
   const codify = run.codify;
   if (!codify) return null;
   const label =
@@ -236,17 +236,37 @@ function RunEvidence({ run }: { run: AgentRun }) {
 
   return (
     <aside className={"run-evidence evidence-" + codify.decision}>
-      {codify.delegatedFromAgentName && (
+      {codify.delegatedToAgentName && (
         <div className="evidence-handoff">
-          Handed to this specialist from{" "}
-          <strong>{codify.delegatedFromAgentName}</strong> — this task has been done before,
-          so it runs on the Agent built for it.
+          Handed to <strong>{codify.delegatedToAgentName}</strong> — this task has been done
+          before, so it ran on the Agent built for it. You stayed here.
         </div>
       )}
       <div className="evidence-row">
-        <span className={"badge badge-" + codify.brokerMode}>{codify.brokerMode}</span>
+        {/*
+          `brokerMode` is what the contract *asks* for. Whether anything
+          enforces it depends on there being a container engine to put a broker
+          in front of the run — without one the scope is derived, bound and
+          displayed, but nothing refuses anything. Printing "enforce" there
+          claims a guarantee the runtime is not providing.
+        */}
+        <span
+          className={
+            "badge badge-" + (codify.brokerMode === "enforce" && !enforcing
+              ? "observe"
+              : codify.brokerMode)
+          }
+        >
+          {codify.brokerMode === "enforce" && !enforcing ? "not enforced" : codify.brokerMode}
+        </span>
         <span>{label}</span>
       </div>
+      {codify.brokerMode === "enforce" && !enforcing && (
+        <div className="evidence-caveat">
+          Scope derived and bound, but no container engine is available, so no broker sits
+          in front of this run. Nothing was refused because nothing could be.
+        </div>
+      )}
       {codify.scope && (
         <div className="evidence-scope">
           <span>
@@ -265,6 +285,21 @@ function RunEvidence({ run }: { run: AgentRun }) {
                 .map((entry) => <code key={entry.path}>./{entry.path}</code>)
             ) : (
               <em>none</em>
+            )}
+          </span>
+          {/*
+            Shown because the narrowing is the whole argument: a task that reads
+            one directory and writes one other is the evidence that nobody had
+            to write this policy. Listing only the writable half hid it.
+          */}
+          <span>
+            readable:{" "}
+            {codify.scope.paths.filter((entry) => entry.mode === "ro").length > 0 ? (
+              codify.scope.paths
+                .filter((entry) => entry.mode === "ro")
+                .map((entry) => <code key={entry.path}>./{entry.path}</code>)
+            ) : (
+              <em>none beyond the workspace</em>
             )}
           </span>
         </div>
@@ -297,6 +332,10 @@ export default function App() {
   const [form, setForm] = useState(emptyForm);
   const [prompt, setPrompt] = useState("");
   const [activeRun, setActiveRun] = useState<AgentRun | null>(null);
+  // Evidence belongs to a turn, not to the conversation. A thread can now hold
+  // turns governed by different contracts, so "the latest run" cannot caption
+  // all of them.
+  const [runsById, setRunsById] = useState<Record<string, AgentRun>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"playground" | "governance">("playground");
@@ -364,11 +403,13 @@ export default function App() {
     setShowSettings(false);
     if (!selectedId) {
       setMessages([]);
+      setRunsById({});
       return;
     }
     void Promise.all([refreshMessages(selectedId), api.runs(selectedId)])
       .then(([, result]) => {
         if (selectedIdRef.current !== selectedId) return;
+        setRunsById(Object.fromEntries(result.runs.map((entry) => [entry.id, entry])));
         const latest = result.runs[0] ?? null;
         setActiveRun(latest);
         if (latest && ["queued", "running"].includes(latest.status)) {
@@ -529,17 +570,20 @@ export default function App() {
         return;
       }
       if (result.delegatedTo) {
-        // The platform recognised the task and handed it to the specialist, so
-        // the turn lives in that Agent's conversation. Follow it there rather
-        // than showing the user a reply that is not in the thread they see.
+        // The platform recognised the task and handed it to the specialist —
+        // but the conversation stays where it was typed. Moving the reader to
+        // another card fragmented their history across agents and made them
+        // pick the right one before a follow-up would even be heard. The turn
+        // is filed here and labelled with who actually ran it.
         setDelegationNotice({
           from: selected.name,
           to: result.delegatedTo.name,
         });
-        setSelectedId(result.delegatedTo.id);
         await refreshAgents();
-        await refreshMessages(result.delegatedTo.id);
-        setActiveRun(result.run);
+        if (selectedIdRef.current === selected.id) {
+          setMessages((current) => [...current, result.message]);
+          setActiveRun(result.run);
+        }
       } else if (selectedIdRef.current === selected.id) {
         setMessages((current) => [...current, result.message]);
         setActiveRun(result.run);
@@ -716,7 +760,7 @@ export default function App() {
 
       <main className="main">
         {view === "governance" ? (
-          <Governance onError={setError} />
+          <Governance onError={setError} onAgentsChanged={() => void refreshAgents()} />
         ) : (
           <>
         {!system?.arkConfigured || !system?.codexAvailable ? (
@@ -880,15 +924,37 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
-                  messages.map((message) => (
-                    <article className={"message message-" + message.role} key={message.id}>
-                      <div className="message-meta">
-                        <strong>{message.role === "user" ? "You" : selected.name}</strong>
-                        <span>{formatTime(message.createdAt)}</span>
-                      </div>
-                      <div className="message-body">{message.content}</div>
-                    </article>
-                  ))
+                  messages.map((message) => {
+                    const ranElsewhere = message.executedByAgentId
+                      ? agents.find((agent) => agent.id === message.executedByAgentId)
+                      : undefined;
+                    return (
+                      <article className={"message message-" + message.role} key={message.id}>
+                        <div className="message-meta">
+                          <strong>
+                            {message.role === "user"
+                              ? "You"
+                              : (ranElsewhere?.name ?? selected.name)}
+                          </strong>
+                          {message.role === "assistant" && ranElsewhere && (
+                            <span className="message-router" title="Routed by Codify">
+                              ⇢ specialist for this task
+                            </span>
+                          )}
+                          <span>{formatTime(message.createdAt)}</span>
+                        </div>
+                        <div className="message-body">{message.content}</div>
+                        {message.role === "assistant" &&
+                          runsById[message.runId]?.codify &&
+                          runsById[message.runId]?.id !== activeRun?.id && (
+                            <RunEvidence
+                              run={runsById[message.runId] as AgentRun}
+                              enforcing={system?.codifyEnforcing === true}
+                            />
+                          )}
+                      </article>
+                    );
+                  })
                 )}
                 {activeRun && ["queued", "running"].includes(activeRun.status) && (
                   <article className="message message-assistant thinking">
@@ -909,7 +975,7 @@ export default function App() {
                   </article>
                 )}
                 {activeRun && activeRun.codify && (
-                  <RunEvidence run={activeRun} />
+                  <RunEvidence run={activeRun} enforcing={system?.codifyEnforcing === true} />
                 )}
                 <div ref={messageEnd} />
               </div>

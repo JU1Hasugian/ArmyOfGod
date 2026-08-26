@@ -26,8 +26,8 @@ answer, and least privilege arrives as a side effect.
 Read in this order: `README.md` → `docs/CODIFY.md` (design) →
 `docs/SEMANTIC-ROUTING.md` (all measurement).
 
-**Where things stand.** Ten mechanisms, all implemented and enforced; 229 tests
-across 29 files, of which 3 skip without live credentials; `npm run check` green
+**Where things stand.** Ten mechanisms, all implemented and enforced; 237 tests
+across 31 files, of which 3 skip without live credentials; `npm run check` green
 (typecheck + suite + both production builds). Every headline claim is measured
 against data the author did not write, and §9 lists what is not.
 
@@ -282,10 +282,28 @@ overlap, so no threshold separates them; 0.72 is the cheapest point where
 cross-contract error reaches zero. Biasing higher became defensible only once
 principal binding changed what a miss costs.
 
-**Handoff, not call-and-return.** Delegation moves the conversation to the
-specialist rather than relaying a result back. Right, because the specialist's
-value is partly its workspace and session, which call-and-return would strand.
-The residual UX weakness — your history fragments — is noted below.
+**Execution moves; the conversation does not.** Delegation runs the turn in the
+specialist's workspace, on its own thread, under its contract's scope — and
+files the reply in the conversation the person typed into.
+
+This is a reversal, and the original reasoning is worth recording because it was
+half right. It said the specialist's value is partly its workspace and session,
+which call-and-return would strand — true, and still true. But that argument is
+about *where work executes*, and it was used to justify *where the conversation
+appears*. Those are separable: the run genuinely happens in the specialist's
+workspace whether or not the reader is moved there.
+
+Moving them cost more than the fragmented history it was known to cause. It made
+the person operate a switchboard — pick the right Agent before a follow-up would
+even be heard — and a correction typed at the general Agent was **silently
+dropped**, because feedback attaches to a governed run on the same Agent and the
+general Agent has none. The mechanism most dependent on ordinary use was the one
+ordinary use could not reach.
+
+What replaces it is `codify/continuity.ts`: a matched contract always wins, and
+an unmatched turn goes to whoever answered last if it reads as a follow-up. That
+also *narrows* the scope of a correction — it now runs `principal_bound` under
+the specialist's contract instead of ad hoc on the general Agent, unrestricted.
 
 ---
 
@@ -369,7 +387,7 @@ mattered was found by running the thing against real input, not by reading it.
 
 | test | proves | how to run |
 |---|---|---|
-| `npm run check` | 229 tests, typecheck, both builds | `npm run check` |
+| `npm run check` | 237 tests, typecheck, both builds | `npm run check` |
 | `semantic.live.test.ts` | recognition against a real Ark endpoint | `ARK_API_KEY` + `ARK_EMBED_MODEL`; see §10 |
 | `planner.live.test.ts` | **8/8 split, 8/8 both halves, 8/8 ordering, 0/8 false splits** over four runs | `ARK_API_KEY` + `ARK_MODEL`; see §10 |
 | live-demo (49 checks) | the policy **binds** — real Docker, real Codex, derived scope enforced, `ab.chatgpt.com` refused, budget 429, trace, two specialists never sharing a scope | scratch harness, needs a container engine |

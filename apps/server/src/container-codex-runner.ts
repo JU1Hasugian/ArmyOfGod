@@ -5,7 +5,11 @@ import { promisify } from "node:util";
 import { agentCodexHome, isCodifyActive, writeCodexConfig, type AppConfig } from "./config.js";
 import { buildCodexArgs, parseCodexEventLine } from "./codex-runner.js";
 import { BrokerSession } from "./codify/broker-session.js";
-import { diffWorkspace, snapshotWorkspace } from "./codify/workspace-diff.js";
+import {
+  diffWorkspace,
+  pathsNamedByCommands,
+  snapshotWorkspace,
+} from "./codify/workspace-diff.js";
 import type { BrokerEvent, CapabilityScope } from "./codify/types.js";
 import { RunCancelledError } from "./errors.js";
 import type {
@@ -33,6 +37,7 @@ interface ParsedEvents {
   threadId: string | null;
   usage: RunUsage | null;
   errors: string[];
+  commands: string[];
 }
 
 export function containerName(agentId: string, instanceId = "default"): string {
@@ -236,6 +241,11 @@ export class ContainerCodexRunner implements AgentRunner {
     }
 
     const before = await snapshotWorkspace(request.workspacePath);
+    // Filled by the event parser further down and read by `publishEvidence`,
+    // which is defined before the parser exists. Shared by reference so the
+    // read set can be widened by what the commands named — `atime` stops
+    // recording reads under `relatime` after the first one.
+    const commandLog: string[] = [];
     const secretNames = binding.scope.secrets.filter(
       (name) => this.config.codifyManagedSecrets[name] !== undefined,
     );
@@ -273,9 +283,15 @@ export class ContainerCodexRunner implements AgentRunner {
       let pathsRead: string[] = [];
       try {
         brokerEvents = await session.readEvents();
-        const delta = diffWorkspace(before, await snapshotWorkspace(request.workspacePath));
+        const after = await snapshotWorkspace(request.workspacePath);
+        const delta = diffWorkspace(before, after);
         pathsWritten = delta.pathsWritten;
-        pathsRead = delta.pathsRead;
+        const written = new Set(pathsWritten);
+        pathsRead = [
+          ...new Set([...delta.pathsRead, ...pathsNamedByCommands(commandLog, after)]),
+        ]
+          .filter((entry) => !written.has(entry))
+          .sort();
       } catch {
         /* Evidence collection must never mask the run's own outcome. */
       }
@@ -299,6 +315,7 @@ export class ContainerCodexRunner implements AgentRunner {
         },
         // The container receives a per-run placeholder, never the real Ark key.
         { ARK_API_KEY: session.runToken, ...secretValues },
+        commandLog,
       );
     } finally {
       await publishEvidence();
@@ -312,6 +329,9 @@ export class ContainerCodexRunner implements AgentRunner {
     request: RunnerRequest,
     launch?: ScopedLaunch,
     extraEnvironment: Record<string, string> = {},
+    // Shared by reference with the caller's evidence step, which runs after
+    // this returns and needs the commands the turn reported.
+    commandLog: string[] = [],
   ): Promise<RunnerResult> {
     const child = spawn(
       this.config.containerEngine,
@@ -342,6 +362,7 @@ export class ContainerCodexRunner implements AgentRunner {
       threadId: request.threadId,
       usage: null,
       errors: [],
+      commands: commandLog,
     };
     let stdout = "";
     let stderr = "";

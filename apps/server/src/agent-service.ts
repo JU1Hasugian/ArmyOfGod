@@ -5,6 +5,7 @@ import { agentCodexHome, isArkConfigured, isCodifyActive } from "./config.js";
 import { reapOrphanedBrokers } from "./codify/broker-session.js";
 import { RunTracer } from "./codify/trace.js";
 import { waves } from "./codify/planner.js";
+import { looksLikeFollowUp } from "./codify/continuity.js";
 import type { CoordinationSession } from "./codify/coordination.js";
 import type { CodifyService } from "./codify/service.js";
 import type { CapabilityScope, RouteDecision, TaskContract } from "./codify/types.js";
@@ -207,6 +208,28 @@ export class AgentService {
    * A record written before `userId` existed has none, and stays visible to
    * everyone rather than vanishing from the history that already displayed it.
    */
+  /**
+   * The Agent that answered this principal's most recent turn in this
+   * conversation, when it was not the conversation's own Agent.
+   *
+   * Read from the transcript rather than held as a cursor: a cursor and a
+   * history can disagree, and only the history survives a restart.
+   */
+  private lastResponder(conversationAgentId: string, userId: string): Agent | null {
+    const database = this.store.snapshot();
+    const previous = [...database.messages]
+      .filter(
+        (message) =>
+          message.agentId === conversationAgentId &&
+          message.role === "assistant" &&
+          (message.userId === undefined || message.userId === userId) &&
+          message.executedByAgentId !== undefined,
+      )
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0];
+    if (!previous?.executedByAgentId) return null;
+    return database.agents.find((agent) => agent.id === previous.executedByAgentId) ?? null;
+  }
+
   getMessages(agentId: string, userId?: string): Message[] {
     this.getAgent(agentId);
     return this.store
@@ -229,11 +252,26 @@ export class AgentService {
     return run;
   }
 
+  /**
+   * Runs this Agent executed, plus runs answering this Agent's conversation.
+   *
+   * Both, because delegation separates the two: the specialist owns the run,
+   * the desk owns the thread it belongs to, and each view needs to see it.
+   */
   getRuns(agentId: string): AgentRun[] {
     this.getAgent(agentId);
     return this.store
       .snapshot()
-      .runs.filter((run) => run.agentId === agentId)
+      .runs.filter(
+        (run) =>
+          run.agentId === agentId ||
+          run.conversationAgentId === agentId ||
+          // A run written before `conversationAgentId` existed still records
+          // where the turn came from, on the delegation summary. Honour it
+          // rather than losing the evidence for conversations already on disk.
+          (run.conversationAgentId === undefined &&
+            run.codify?.delegatedFromAgentId === agentId),
+      )
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
 
@@ -282,13 +320,47 @@ export class AgentService {
     let binding: RunnerScopeBinding | undefined;
     let decision: RouteDecision | undefined;
     let summary: RunCodifySummary | undefined;
-    let executionAgentId = agentId;
     let delegatedTo: Agent | undefined;
 
+    // The conversation is where the person typed; execution is wherever the
+    // platform routes the work. Keeping them separate is what lets one thread
+    // reach every specialist without the reader being moved between cards.
+    const conversationAgentId = agentId;
+
+    // A follow-up belongs to whoever answered last. Resolved *before* routing
+    // rather than after, so `route()` sees the specialist as the addressed
+    // Agent and produces its `principal_bound` scope by the ordinary path — a
+    // correction to a governed answer then runs under that contract's
+    // permissions instead of ad hoc on the general Agent, unrestricted.
+    let routeAgentId = agentId;
+    let continuation: { agent: Agent; reason: string } | undefined;
     if (this.codify.enabled) {
+      const verdict = looksLikeFollowUp(storedPrompt);
+      if (verdict.followUp) {
+        const previous = this.lastResponder(conversationAgentId, userId);
+        if (previous && previous.id !== agentId && previous.status === "ready") {
+          routeAgentId = previous.id;
+          continuation = { agent: previous, reason: verdict.reason };
+        }
+      }
+    }
+    let executionAgentId = routeAgentId;
+
+    if (this.codify.enabled) {
+      if (continuation) {
+        tracer.event({
+          name: "continues with " + continuation.agent.name,
+          category: "delegation",
+          parentId: turn.id,
+          attributes: {
+            agent: continuation.agent.name,
+            why: continuation.reason,
+          },
+        });
+      }
       const observation = await this.codify.recordPromptObservation({
         runId,
-        agentId,
+        agentId: routeAgentId,
         userId,
         redactedText: storedPrompt,
         redactionHits: redaction.hits,
@@ -297,7 +369,7 @@ export class AgentService {
       // ⑤a The routing decision: which contract, if any, governs this turn.
       const routing = this.codify.route({
         runId,
-        agentId,
+        agentId: routeAgentId,
         observation,
         forceAdHoc: options.forceAdHoc === true,
       });
@@ -406,7 +478,7 @@ export class AgentService {
       // handed to the Agent built for it: its workspace, its session, and the
       // brief distilled from every past run. Applying the permissions alone
       // would govern the turn without improving it.
-      if (routing.delegateToAgentId && routing.delegateToAgentId !== agentId) {
+      if (routing.delegateToAgentId && routing.delegateToAgentId !== routeAgentId) {
         const specialist = this.store
           .snapshot()
           .agents.find((item) => item.id === routing.delegateToAgentId);
@@ -420,6 +492,8 @@ export class AgentService {
             ...summary,
             delegatedFromAgentId: agentId,
             delegatedFromAgentName: addressed.name,
+            delegatedToAgentId: specialist.id,
+            delegatedToAgentName: specialist.name,
           };
           tracer.event({
             name: "delegated to " + specialist.name,
@@ -442,6 +516,7 @@ export class AgentService {
     const run: AgentRun = {
       id: runId,
       agentId: executionAgentId,
+      ...(executionAgentId !== conversationAgentId ? { conversationAgentId } : {}),
       status: "queued",
       prompt: storedPrompt,
       output: null,
@@ -452,14 +527,19 @@ export class AgentService {
       createdAt: timestamp,
       ...(summary ? { codify: summary } : {}),
     };
+    // Filed under the conversation, not the executing Agent. The run still
+    // belongs to the specialist; the transcript belongs to the person.
     const message: Message = {
       id: randomUUID(),
-      agentId: executionAgentId,
+      agentId: conversationAgentId,
       runId,
       role: "user",
       content: storedPrompt,
       createdAt: timestamp,
       userId,
+      ...(executionAgentId !== conversationAgentId
+        ? { executedByAgentId: executionAgentId }
+        : {}),
     };
 
     const agentAtStart = await this.store.mutate((database) => {
@@ -487,6 +567,7 @@ export class AgentService {
       tracer,
       turnSpanId: turn.id,
       userId,
+      conversationAgentId,
       threadId: resumeThread(agentAtStart, userId, decision),
       ...(binding ? { binding } : {}),
       ...(decision ? { decision } : {}),
@@ -870,6 +951,8 @@ export class AgentService {
       tracer: RunTracer;
       turnSpanId: string;
       userId: string;
+      /** Where the reply is filed, which is not always where it ran. */
+      conversationAgentId: string;
       threadId: string | null;
       binding?: RunnerScopeBinding;
       decision?: RouteDecision;
@@ -979,12 +1062,15 @@ export class AgentService {
         storedRun.completedAt = completedAt;
         database.messages.push({
           id: randomUUID(),
-          agentId: agent.id,
+          agentId: context.conversationAgentId,
           runId: run.id,
           role: "assistant",
           content: result.output,
           createdAt: completedAt,
           userId: context.userId,
+          ...(agent.id !== context.conversationAgentId
+            ? { executedByAgentId: agent.id }
+            : {}),
         });
         agent.status = "ready";
         agent.codexThreadId = result.threadId;

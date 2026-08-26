@@ -572,7 +572,7 @@ why. The first runs with `github.com` and the second with `registry.npmjs.org` �
 **neither Agent ever holds both**, which is the confused-deputy shape a single
 multi-tool Agent would have arrived at by accident.
 
-**2:50–3:00 — Close.** `npm run check` green — 229 tests. State one limitation
+**2:50–3:00 — Close.** `npm run check` green — 237 tests. State one limitation
 from §11.
 
 ---
@@ -580,7 +580,7 @@ from §11.
 ## 9. Tests
 
 `npm run check` runs typecheck, the full vitest suite, and both production
-builds. **229 tests across 29 files** (three skipped without live credentials).
+builds. **237 tests across 31 files** (three skipped without live credentials).
 
 | Area | What it proves |
 |---|---|
@@ -908,6 +908,53 @@ with no contract yet. Copying never fails Agent creation, and
 
 ---
 
+## 11c. One conversation, many specialists
+
+Delegation used to move the reader to the specialist. It no longer does: the
+turn executes there, and the reply is filed in the conversation it was typed
+into, labelled with which Agent ran it.
+
+The judgement this needed is which Agent a *follow-up* belongs to, and the
+failure modes are not symmetrical. Treating a new request as a follow-up runs it
+on the wrong specialist, which is contained — that scope is narrow and
+`principal_bound` applies. Treating a follow-up as a new request runs it ad hoc
+on the general Agent, **unrestricted**, and the correction never reaches the
+contract it was about. The second is worse on both counts, so the test leans
+towards continuity.
+
+`codify/continuity.ts` decides it without a model call, in this order:
+
+1. **A matched contract always wins.** A recognised task is a new instance of
+   that task whatever came before it — the same rule that starts a fresh Codex
+   thread on a matched turn.
+2. **Names a path, file or URL → a new request.** A self-contained ask states
+   its own subject; a correction does not need to, because the subject is what
+   just happened.
+3. **Eight words or fewer → a follow-up.**
+4. **Over twelve words → a new request.** Referential words are evidence only
+   inside that window: *"draft a birthday message and send it round the team"*
+   contains "it" and is a whole new task. A correction long enough to need a
+   pronoun is rare; a fresh request containing one is ordinary.
+5. **In between → referential or adjustment words decide.**
+
+Continuity is resolved *before* `route()` rather than after, so the specialist
+becomes the addressed Agent and its `principal_bound` scope falls out of the
+ordinary path rather than being applied as a special case.
+
+Two records follow the split between conversation and execution: `Message`
+carries `executedByAgentId` and `AgentRun` carries `conversationAgentId`. Both
+are optional, and a record written before they existed resolves through the
+delegation summary instead of disappearing.
+
+**What this does not do.** A conversation whose last answer came from the
+general Agent — because it happened before promotion — stays there, and a
+correction to it records nothing. That is deliberate: attaching a correction to
+a contract that did not exist when the work happened would weaken the one claim
+the refinement loop rests on, which is that several people corrected *this
+contract's* output. It self-heals on that person's next request.
+
+---
+
 ## 12. Corrections made to the original design
 
 The design this implements was revised in five places, each after measurement.
@@ -945,7 +992,7 @@ test asserting the production-mode error shape.
 |---|---|---|
 | End-to-end middleware behavior | 40% | Routing changes **which Agent and which brief** executes a turn, on three channels that fail in different directions. Enforcement executes at container launch and at the broker, on a network the Agent cannot route around, and a promoted specialist carries its scope even when nothing matches. Budget refuses at admission before a Run exists. All verified against live Ark and real Docker (§10, `docs/SEMANTIC-ROUTING.md` §4–4b). |
 | Technical design and integration | 25% | Reuses `AgentService` and `AgentRunner`; enforcement lives in `ContainerCodexRunner` only. Ten additive record types with backfill, so an older store still loads, and a contract promoted before the semantic channel existed still matches on its fingerprints. `CapabilityScope`, `TaskBudget` and `TaskContract` are the extensible contracts. Coordination adds no execution path of its own — a session turn goes through the ordinary `sendMessage` seam, which is what makes "each participant under its own scope" true rather than aspirational. |
-| Verification and robustness | 20% | 229 tests, including a cooperation-independent network test, credential isolation, fail-closed, forged-scope, delegation fallback, the padding evasion, channel complementarity, principal binding, budget lineage, trace crash-closure, and the coordination turn claim. Redaction before storage; deterministic fallbacks for every model call; bounded retry so a rate limit cannot silently become a policy decision; per-run cleanup. |
+| Verification and robustness | 20% | 237 tests, including a cooperation-independent network test, credential isolation, fail-closed, forged-scope, delegation fallback, the padding evasion, channel complementarity, principal binding, budget lineage, trace crash-closure, and the coordination turn claim. Redaction before storage; deterministic fallbacks for every model call; bounded retry so a rate limit cannot silently become a policy decision; per-run cleanup. |
 | Demo and reproducibility | 15% | One-command startup preserved; seeded corpus makes the flow reproducible at t=0; the live-endpoint test skips cleanly without credentials so `npm run check` is green either way; limitations documented; no hidden manual setup. |
 
 ### Optional-evidence checkboxes

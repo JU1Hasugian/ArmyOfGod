@@ -9,7 +9,11 @@ import type {
   RunnerRequest,
   RunnerResult,
 } from "./types.js";
-import { diffWorkspace, snapshotWorkspace } from "./codify/workspace-diff.js";
+import {
+  diffWorkspace,
+  pathsNamedByCommands,
+  snapshotWorkspace,
+} from "./codify/workspace-diff.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,6 +22,17 @@ export interface ParsedEvents {
   threadId: string | null;
   usage: RunUsage | null;
   errors: string[];
+  /**
+   * The shell commands Codex reported running.
+   *
+   * Kept because the filesystem cannot answer "what did this run read?" on its
+   * own: `atime` is the only durable trace, and almost every Linux mount is
+   * `relatime`, which stops updating it once it is newer than `mtime`. A run
+   * that reads a file a second time leaves no mark at all, so a read set built
+   * from `atime` alone is not merely approximate — it is systematically empty
+   * for every run after the first. `cat finance/NOTES.md` is unambiguous.
+   */
+  commands: string[];
 }
 
 export function buildCodexArgs(
@@ -58,6 +73,9 @@ export function parseCodexEventLine(line: string, parsed: ParsedEvents): void {
     const item = event.item as Record<string, unknown>;
     if (item.type === "agent_message" && typeof item.text === "string") {
       parsed.messages.push(item.text);
+    }
+    if (item.type === "command_execution" && typeof item.command === "string") {
+      parsed.commands.push(item.command);
     }
   }
 
@@ -166,6 +184,7 @@ export class CodexRunner implements AgentRunner {
       threadId: request.threadId,
       usage: null,
       errors: [],
+      commands: [],
     };
     let stdout = "";
     let stderr = "";
@@ -244,9 +263,18 @@ export class CodexRunner implements AgentRunner {
         let pathsRead: string[] = [];
         try {
           if (before) {
-            const delta = diffWorkspace(before, await snapshotWorkspace(request.workspacePath));
+            const after = await snapshotWorkspace(request.workspacePath);
+            const delta = diffWorkspace(before, after);
             pathsWritten = delta.pathsWritten;
-            pathsRead = delta.pathsRead;
+            // Unioned with what the commands named, because `atime` alone goes
+            // silent after a file's first read under `relatime` and would leave
+            // the task's own inputs out of its derived scope.
+            const written = new Set(pathsWritten);
+            pathsRead = [
+              ...new Set([...delta.pathsRead, ...pathsNamedByCommands(parsed.commands, after)]),
+            ]
+              .filter((entry) => !written.has(entry))
+              .sort();
           }
         } catch {
           /* Evidence collection must never mask the run's own outcome. */

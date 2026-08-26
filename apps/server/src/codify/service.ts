@@ -1831,8 +1831,12 @@ export function sanitisePrompt(samples: BriefSample[]): string {
     "Do what these runs did. Where the wordings differ, the behaviour above is the",
     "record of what the task actually is.",
     "",
-    "This is a description assembled from observation, not a drafted procedure:",
-    "no model was available when this task was promoted.",
+    // Said plainly because this text is shown on the pending card, before
+    // anyone has approved anything: drafting happens at approval, behind the
+    // human gate, so on a proposal no model has been asked yet. Claiming one
+    // was "unavailable" would describe a failure that has not happened.
+    "This is assembled from observation. The distilled brief is drafted when the",
+    "task is approved; if that call cannot be made, this text stands in for it.",
   );
 
   return buildSpecification(lines.join("\n"));
