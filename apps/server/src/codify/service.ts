@@ -25,6 +25,7 @@ import {
 } from "./fingerprint.js";
 import { draftBrief, draftRule, reviewScope } from "./ark-client.js";
 import {
+  NEAR_MATCH_FRACTION,
   bestMatch,
   clusterByMatch,
   embedPrompt,
@@ -32,6 +33,7 @@ import {
   type MatchResult,
   type MatchThresholds,
 } from "./semantic.js";
+import { planSteps, type PlannedStep } from "./planner.js";
 import { redact, redactValue } from "./redaction.js";
 import { checkNarrowing, clampForAutoGrant, deriveScope, normalizeScope } from "./scope.js";
 import { checkBudget, normalizeBudget, usageForContract } from "./budget.js";
@@ -40,6 +42,8 @@ import {
   buildInstruction,
   claimTurn,
   parseDeclaredState,
+  pendingSteps,
+  planInstruction,
   selectParticipant,
   settleTurn,
   shouldStop,
@@ -161,6 +165,12 @@ export interface RoutingResult {
   delegateToAgentId?: string;
   contract?: TaskContract;
 }
+
+/**
+ * How much longer than the task it matched a prompt must be before it is worth
+ * asking whether it contains a second task.
+ */
+const COMPOUND_LENGTH_RATIO = 1.25;
 
 export class CodifyService {
   constructor(
@@ -294,6 +304,11 @@ export class CodifyService {
     // contracts matched on different channels are still comparable.
     let best: { contract: TaskContract; match: MatchResult } | null = null;
     let nearest: { contract: TaskContract; match: MatchResult } | null = null;
+    // Contracts that came close without clearing. A prompt that combines a
+    // governed task with something else scores under every line — compounding
+    // weakens both channels at once — and would otherwise be indistinguishable
+    // from a genuinely unfamiliar request.
+    const near: NonNullable<RouteDecision["nearMatches"]> = [];
     for (const contract of contracts) {
       const match = bestMatch(
         contractExemplars(contract),
@@ -303,9 +318,20 @@ export class CodifyService {
       if (!nearest || match.confidence > nearest.match.confidence) {
         nearest = { contract, match };
       }
-      if (!match.matched) continue;
+      if (!match.matched) {
+        if (match.confidence >= NEAR_MATCH_FRACTION) {
+          near.push({
+            contractId: contract.id,
+            name: contract.name,
+            score: Number(match.score.toFixed(3)),
+            channel: match.channel,
+          });
+        }
+        continue;
+      }
       if (!best || match.confidence > best.match.confidence) best = { contract, match };
     }
+    near.sort((left, right) => right.score - left.score);
 
     const base = {
       id: randomUUID(),
@@ -381,10 +407,17 @@ export class CodifyService {
               },
             }
           : {}),
+        ...(near.length > 0 ? { nearMatches: near } : {}),
         reason:
           contracts.length === 0
             ? "No active contract exists yet; observing this run to learn from it."
-            : nearest
+            : near.length > 0
+              ? "Nothing cleared its threshold, but " +
+                (near.length === 1 ? "one governed task is" : near.length + " governed tasks are") +
+                " partly recognised here: " +
+                near.map((entry) => '"' + entry.name + '" at ' + entry.score.toFixed(3)).join(", ") +
+                ". This looks like more than one request."
+              : nearest
               ? 'Nothing cleared its threshold. Closest was "' +
                 nearest.contract.name +
                 '" at ' +
@@ -537,6 +570,10 @@ export class CodifyService {
     maxTurns: number;
     createdBy: string;
     state?: Record<string, string> | undefined;
+    /** Fixed steps, when the session came from splitting one compound request. */
+    plan?: PlannedStep[] | undefined;
+    /** Where an unrecognised step goes: the general Agent, normally. */
+    fallbackAgentId?: string | undefined;
   }): Promise<CoordinationSession> {
     const unique = [...new Set(input.participantAgentIds)];
     if (unique.length < 2) {
@@ -557,6 +594,8 @@ export class CodifyService {
       participantAgentIds: unique,
       turns: [],
       state: input.state ?? {},
+      ...(input.plan && input.plan.length > 0 ? { plan: input.plan } : {}),
+      ...(input.fallbackAgentId ? { fallbackAgentId: input.fallbackAgentId } : {}),
       maxTurns: input.maxTurns,
       status: "active",
       createdAt: timestamp,
@@ -608,14 +647,69 @@ export class CodifyService {
     selection: SelectionResult;
     instruction: string;
   } | null {
+    const wave = this.planWave(sessionId);
+    return wave[0] ?? null;
+  }
+
+  /**
+   * Everything that can start now, as a group.
+   *
+   * A goal-driven session yields at most one turn, because its next instruction
+   * depends on what the last one produced. A plan-backed session yields the
+   * whole ready wave: independent fragments of the same request — "audit the
+   * dependencies" and "write the status update" — have no reason to wait for
+   * each other, and the only thing that serialises them is landing on the same
+   * Agent, which `claimTurn` refuses and the caller then defers.
+   *
+   * Selection is still routing. Each fragment is matched against every
+   * participant's contract on its own merits, so a step runs under the scope of
+   * the contract that recognised *it* — never a union, and never the scope of
+   * whichever contract happened to match the compound prompt best.
+   */
+  planWave(sessionId: string): {
+    session: CoordinationSession;
+    selection: SelectionResult;
+    instruction: string;
+    stepIndex?: number;
+  }[] {
     const session = this.getSession(sessionId);
     const stop = shouldStop(session);
-    if (stop.stop) return null;
+    if (stop.stop) return [];
+
+    if (session.plan && session.plan.length > 0) {
+      const out: {
+        session: CoordinationSession;
+        selection: SelectionResult;
+        instruction: string;
+        stepIndex: number;
+      }[] = [];
+      const claimedAgents = new Set(
+        session.turns.filter((turn) => turn.status === "claimed").map((turn) => turn.agentId),
+      );
+      for (const stepIndex of pendingSteps(session)) {
+        const instruction = planInstruction(session, stepIndex);
+        const selection = this.selectFor(session, instruction);
+        if (!selection) continue;
+        // Two steps of the same wave that route to the same Agent cannot run at
+        // once; the later one waits for the next wave rather than being refused.
+        if (claimedAgents.has(selection.agentId)) continue;
+        claimedAgents.add(selection.agentId);
+        out.push({ session, selection, instruction, stepIndex });
+      }
+      return out;
+    }
 
     const instruction = buildInstruction(session);
+    const selection = this.selectFor(session, instruction);
+    if (!selection) return [];
+    return [{ session, selection, instruction }];
+  }
+
+  /** Route one instruction to a participant, exactly as a Playground turn routes. */
+  private selectFor(session: CoordinationSession, instruction: string): SelectionResult | null {
     const database = this.store.snapshot();
     const canonicalForm = canonicalize(instruction);
-    const selection = selectParticipant({
+    return selectParticipant({
       session,
       instruction: { fingerprint: fingerprint(canonicalForm), canonicalForm },
       participants: database.agents,
@@ -623,8 +717,61 @@ export class CodifyService {
       thresholds: this.defaultThresholds(),
       exemplarsFor: (contract) => contractExemplars(contract),
     });
-    if (!selection) return null;
-    return { session, selection, instruction };
+  }
+
+  /**
+   * Split a request that asks for several things, or return null when it asks
+   * for one.
+   *
+   * Deliberately not called on every turn. It costs a model round trip, and the
+   * overwhelming majority of prompts are a single task — so the caller reaches
+   * for it only when routing already saw the signature of a compound request,
+   * which is a prompt that partly recognises several contracts without clearing
+   * any of them.
+   */
+  async splitPrompt(prompt: string): Promise<PlannedStep[] | null> {
+    const steps = await planSteps(this.config, prompt);
+    return steps.length > 1 ? steps : null;
+  }
+
+  /**
+   * Whether this request looks like it asks for more than one thing.
+   *
+   * Two signatures, because compounding shows up differently depending on how
+   * the second task was phrased:
+   *
+   * 1. **Nothing cleared, several came close.** A reworded second task drags
+   *    containment and the embedding down together — measured at 0.22 / 0.66
+   *    against lines of 0.60 and 0.72 — so a genuinely compound request can
+   *    score below every threshold while still partly recognising several
+   *    contracts. Background traffic does not do this: 2,000 unrelated prompts
+   *    peaked at 0.383, nowhere near the near-match band.
+   * 2. **One cleared, but there is much more text than the task it matched.**
+   *    Containment is deliberately blind to what a prompt adds — that is what
+   *    makes it padding-proof — so "do the recognised task, and also this other
+   *    thing" still matches at 1.0. The extra clause would then run under the
+   *    specialist's scope and be refused at the broker, which is safe but not
+   *    useful. A quarter more text than the longest exemplar is the cheap signal
+   *    that there is something else in there.
+   *
+   * Neither is a decision, only a reason to look. The planner returns a single
+   * step for the great majority of both, and a single step changes nothing.
+   */
+  looksCompound(input: {
+    decision: RouteDecision;
+    canonicalPrompt: string;
+    contract?: TaskContract | undefined;
+  }): boolean {
+    if (!this.config.codifyPlannerEnabled) return false;
+    if (input.decision.decision === "unmatched") {
+      return (input.decision.nearMatches?.length ?? 0) > 0;
+    }
+    if (input.decision.decision !== "routed" || !input.contract) return false;
+    const longest = (input.contract.matchCanonicalForms ?? []).reduce(
+      (most, form) => Math.max(most, form.length),
+      0,
+    );
+    return longest > 0 && input.canonicalPrompt.length >= longest * COMPOUND_LENGTH_RATIO;
   }
 
   claimTurn(
@@ -691,6 +838,27 @@ export class CodifyService {
   async persistRouteDecision(decision: RouteDecision): Promise<void> {
     await this.store.mutate((database) => {
       database.routeDecisions.push(decision);
+    });
+  }
+
+  /**
+   * Record that this turn was split, on the decision already written for it.
+   *
+   * Without this the audit trail says a prompt was unmatched and stops there,
+   * while the work actually ran as several governed steps somewhere else. The
+   * decision is amended rather than replaced, because what routing decided is
+   * still true — it is what happened *next* that the record was missing.
+   */
+  async noteSplit(runId: string, sessionId: string, steps: number): Promise<void> {
+    await this.store.mutate((database) => {
+      const decision = database.routeDecisions.find((entry) => entry.runId === runId);
+      if (!decision) return;
+      decision.splitSessionId = sessionId;
+      decision.reason =
+        decision.reason +
+        " Split into " +
+        steps +
+        " steps, each routed on its own; this turn produced no run of its own.";
     });
   }
 

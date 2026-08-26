@@ -1772,6 +1772,136 @@ textarea:focus {
   line-height: 1;
 }
 
+/* A request that asked for several things, and what happened to each part.
+   Shares the delegation banner's shape so the two read as the same family of
+   "the platform did something on your behalf" notice. */
+.split-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--purple) 35%, var(--line));
+  border-radius: 12px;
+  background: var(--purple-soft);
+}
+
+.split-banner > span:first-child {
+  font-size: 16px;
+  color: var(--purple);
+  line-height: 1.2;
+}
+
+.split-body {
+  min-width: 0;
+  flex: 1;
+}
+
+.split-banner strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+
+.split-banner p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.split-banner em {
+  font-style: normal;
+  color: var(--muted);
+}
+
+.split-banner button {
+  margin-left: auto;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+}
+
+.split-steps {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  counter-reset: split;
+}
+
+.split-step {
+  counter-increment: split;
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px 8px 30px;
+  position: relative;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--paper) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--purple) 18%, var(--line));
+  font-size: 12.5px;
+}
+
+.split-step::before {
+  content: counter(split);
+  position: absolute;
+  left: 9px;
+  top: 8px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--purple-dark);
+  background: color-mix(in srgb, var(--purple) 18%, transparent);
+}
+
+.split-text {
+  color: var(--ink);
+  line-height: 1.45;
+  /* A fragment can be long; it must wrap rather than widen the banner. */
+  overflow-wrap: anywhere;
+}
+
+.split-where {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.split-where strong {
+  display: inline;
+  font-size: 11.5px;
+  margin: 0;
+  color: var(--purple-dark);
+}
+
+.split-where em {
+  font-style: normal;
+}
+
+.split-completed {
+  border-color: color-mix(in srgb, var(--green) 30%, var(--line));
+}
+
+.split-failed {
+  border-color: color-mix(in srgb, var(--red) 35%, var(--line));
+}
+
+.split-pending {
+  opacity: 0.7;
+}
+
+.split-stop {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
 .evidence-handoff {
   margin-bottom: 8px;
   padding-bottom: 8px;

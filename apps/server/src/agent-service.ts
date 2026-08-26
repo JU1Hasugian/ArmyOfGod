@@ -4,6 +4,7 @@ import type { AppConfig } from "./config.js";
 import { agentCodexHome, isArkConfigured, isCodifyActive } from "./config.js";
 import { reapOrphanedBrokers } from "./codify/broker-session.js";
 import { RunTracer } from "./codify/trace.js";
+import { waves } from "./codify/planner.js";
 import type { CoordinationSession } from "./codify/coordination.js";
 import type { CodifyService } from "./codify/service.js";
 import type { CapabilityScope, RouteDecision, TaskContract } from "./codify/types.js";
@@ -220,8 +221,13 @@ export class AgentService {
   async sendMessage(
     agentId: string,
     prompt: string,
-    options: { userId?: string; forceAdHoc?: boolean } = {},
-  ): Promise<{ run: AgentRun; message: Message; delegatedTo?: Agent }> {
+    options: { userId?: string; forceAdHoc?: boolean; skipPlanner?: boolean } = {},
+  ): Promise<{
+    run: AgentRun;
+    message: Message;
+    delegatedTo?: Agent;
+    session?: CoordinationSession;
+  }> {
     if (!isArkConfigured(this.config)) {
       throw new HttpError(
         503,
@@ -324,6 +330,36 @@ export class AgentService {
           throw error;
         }
       }
+      // ⑩ A request that asks for several things. Nothing cleared a threshold
+      // but several contracts came close, which is the measured signature of a
+      // compound prompt — and the one case where falling through to an ad-hoc
+      // run would hand *more* capability to a *less* recognisable request. Split
+      // it, and let each fragment be routed on its own merits.
+      const compound = this.codify.looksCompound({
+        decision,
+        canonicalPrompt: observation.canonicalForm,
+        ...(routing.contract ? { contract: routing.contract } : {}),
+      });
+      if (!options.skipPlanner && compound) {
+        const dispatched = await this.splitIntoSession({
+          addressedAgentId: agentId,
+          prompt: storedPrompt,
+          userId,
+          tracer,
+          turnSpanId: turn.id,
+        });
+        if (dispatched) {
+          await this.codify.noteSplit(
+            runId,
+            dispatched.session.id,
+            dispatched.session.plan?.length ?? 0,
+          );
+          turn.end({ attributes: { split: dispatched.session.plan?.length ?? 0 } });
+          await tracer.flush();
+          return dispatched;
+        }
+      }
+
       // An unmatched run still goes through the broker, permissively, so it
       // yields the CapabilityObservation that scope derivation feeds on.
       binding = routing.binding ?? this.codify.observeBinding(runId);
@@ -484,31 +520,87 @@ export class AgentService {
    * makes "each participant runs under its own contract's scope" true rather
    * than aspirational.
    */
-  async advanceSession(sessionId: string): Promise<CoordinationSession> {
-    const plan = this.codify.planTurn(sessionId);
-    if (!plan) return this.codify.getSession(sessionId);
+  /**
+   * Advance a session by one wave.
+   *
+   * A goal-driven session has a wave of exactly one, so this is the sequential
+   * behaviour it always had. A plan-backed session advances every step whose
+   * dependencies are met, at once — which is the whole point of splitting a
+   * compound request into a graph rather than a list. Each step still runs on
+   * the Agent its own fragment matched, under that contract's scope.
+   */
+  async advanceSession(
+    sessionId: string,
+    onDispatch?: (dispatched: { run: AgentRun; message: Message }) => void,
+  ): Promise<CoordinationSession> {
+    const wave = this.codify.planWave(sessionId);
+    if (wave.length === 0) return this.codify.getSession(sessionId);
+    await Promise.all(wave.map((step) => this.runSessionTurn(sessionId, step, onDispatch)));
+    return this.codify.getSession(sessionId);
+  }
 
-    const participant = this.getAgent(plan.selection.agentId);
-    const claimed = await this.codify.claimTurn(sessionId, {
-      agentId: participant.id,
-      agentName: participant.name,
-      ...(plan.selection.contract
-        ? {
-            contractId: plan.selection.contract.id,
-            contractName: plan.selection.contract.name,
-          }
-        : {}),
-      selection: plan.selection.reason,
-      instruction: plan.instruction,
-    });
+  /**
+   * Advance a plan-backed session until nothing is left to run.
+   *
+   * The loop is bounded by the plan itself: every wave settles at least one
+   * step, and `shouldStop` refuses to continue once the steps are exhausted, a
+   * dependency has failed, or the turn ceiling is hit — so the ceiling is a
+   * backstop rather than the thing doing the work.
+   */
+  async runSessionToCompletion(
+    sessionId: string,
+    onDispatch?: (dispatched: { run: AgentRun; message: Message }) => void,
+  ): Promise<CoordinationSession> {
+    let session = this.codify.getSession(sessionId);
+    for (let guard = 0; guard <= session.maxTurns; guard += 1) {
+      const before = session.turns.length;
+      session = await this.advanceSession(sessionId, onDispatch);
+      if (session.status !== "active" || session.turns.length === before) break;
+    }
+    return session;
+  }
+
+  /** Claim, run and settle a single session turn. */
+  private async runSessionTurn(
+    sessionId: string,
+    step: ReturnType<CodifyService["planWave"]>[number],
+    onDispatch?: (dispatched: { run: AgentRun; message: Message }) => void,
+  ): Promise<void> {
+    const participant = this.getAgent(step.selection.agentId);
+    let claimed;
+    try {
+      claimed = await this.codify.claimTurn(sessionId, {
+        agentId: participant.id,
+        agentName: participant.name,
+        ...(step.stepIndex !== undefined ? { stepIndex: step.stepIndex } : {}),
+        ...(step.selection.contract
+          ? {
+              contractId: step.selection.contract.id,
+              contractName: step.selection.contract.name,
+            }
+          : {}),
+        selection: step.selection.reason,
+        instruction: step.instruction,
+      });
+    } catch {
+      // Lost the race for this step or this Agent. The other claimant is
+      // running it; there is nothing to record and nothing to fail.
+      return;
+    }
 
     try {
-      const { run } = await this.sendMessage(participant.id, plan.instruction, {
-        userId: plan.session.createdBy,
+      const dispatched = await this.sendMessage(participant.id, step.instruction, {
+        userId: step.session.createdBy,
+        // A step is a task in its own right and must be routed as one. Without
+        // this, splitting a compound prompt and then re-entering `sendMessage`
+        // would split each fragment again.
+        skipPlanner: true,
       });
+      const run = dispatched.run;
+      onDispatch?.({ run, message: dispatched.message });
       // `sendMessage` returns as soon as the Run is queued; a session turn is
-      // only over when the Run is. Awaiting the execution here is what makes
-      // the turns sequential rather than overlapping.
+      // only over when the Run is. Awaiting the execution here is what makes a
+      // turn a unit of work rather than a dispatch.
       await this.activeExecutions.get(run.agentId)?.catch(() => undefined);
       const settled = this.getRun(run.id);
       if (settled.status === "completed") {
@@ -535,7 +627,120 @@ export class AgentService {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-    return this.codify.getSession(sessionId);
+  }
+
+  /**
+   * Split a compound request, start it, and return its first step.
+   *
+   * Returns null when the request turned out to be one task, when there is no
+   * specialist to hand a fragment to, or when the session could not get a
+   * single step off the ground — in every one of those the caller carries on
+   * down the ordinary path, so a planner that misfires costs the split and
+   * nothing else.
+   *
+   * The later waves run in the background, because a step that depends on an
+   * earlier one cannot start until that output exists, and the caller is a
+   * chat turn that should not be held open for the whole plan.
+   */
+  private async splitIntoSession(input: {
+    addressedAgentId: string;
+    prompt: string;
+    userId: string;
+    tracer: RunTracer;
+    turnSpanId: string;
+  }): Promise<{ run: AgentRun; message: Message; session: CoordinationSession } | null> {
+    const session = await this.coordinatePrompt({
+      addressedAgentId: input.addressedAgentId,
+      prompt: input.prompt,
+      userId: input.userId,
+    });
+    if (!session) return null;
+
+    const plan = session.plan ?? [];
+    input.tracer.event({
+      name: "split into " + plan.length + " steps",
+      category: "orchestration",
+      parentId: input.turnSpanId,
+      attributes: {
+        sessionId: session.id,
+        steps: plan.map((step) => step.text.slice(0, 80)).join(" | "),
+        // How much of the plan can run at once, which is the difference between
+        // a graph and a list.
+        waves: waves(plan).length,
+      },
+    });
+
+    // Resolves as soon as the first step has a queued Run, not when it finishes.
+    let settle: (() => void) | undefined;
+    const dispatchedFirst = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    let first: { run: AgentRun; message: Message } | undefined;
+    void this.runSessionToCompletion(session.id, (dispatched) => {
+      if (first) return;
+      first = dispatched;
+      settle?.();
+    })
+      .catch(() => undefined)
+      // If the whole session ended without dispatching anything, stop waiting.
+      .finally(() => settle?.());
+    await dispatchedFirst;
+    if (!first) {
+      await this.codify.stopSession(
+        session.id,
+        "No step could be started, so the request ran as a single turn instead.",
+      );
+      return null;
+    }
+    return { ...first, session: this.codify.getSession(session.id) };
+  }
+
+  /**
+   * Turn one request that asks for several things into a plan-backed session.
+   *
+   * Returns null when the request is a single task, which is the common case
+   * and the one that must stay on the ordinary path.
+   *
+   * The participants are every ready Agent that holds an active contract, plus
+   * the Agent the request was addressed to as the fallback. That list is not a
+   * grant of anything: a participant only ever receives a step its own contract
+   * matched, and the fallback only receives steps nothing matched. The union of
+   * their scopes is never held by anyone.
+   */
+  async coordinatePrompt(input: {
+    addressedAgentId: string;
+    prompt: string;
+    userId: string;
+  }): Promise<CoordinationSession | null> {
+    const plan = await this.codify.splitPrompt(input.prompt);
+    if (!plan) return null;
+
+    const database = this.store.snapshot();
+    const specialists = database.contracts
+      .filter((contract) => contract.status === "active" && contract.agentId)
+      .map((contract) => contract.agentId as string);
+    const participants = [
+      input.addressedAgentId,
+      ...specialists.filter((id) =>
+        database.agents.some((agent) => agent.id === id && agent.status !== "stopped"),
+      ),
+    ];
+    // A session needs someone to route between. With no specialist to hand a
+    // fragment to, splitting buys nothing the general Agent was not already
+    // going to do in one turn.
+    if (new Set(participants).size < 2) return null;
+
+    return this.codify.createSession({
+      topic: "Split request",
+      goal: input.prompt,
+      participantAgentIds: participants,
+      fallbackAgentId: input.addressedAgentId,
+      // One turn per step, plus room for a step that has to be retried in a
+      // later wave because its Agent was busy.
+      maxTurns: Math.min(plan.length * 2, 12),
+      createdBy: input.userId,
+      plan,
+    });
   }
 
   async systemInfo(): Promise<Record<string, unknown>> {

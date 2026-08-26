@@ -77,6 +77,17 @@ token **budget** enforced at admission, and **shared sessions** where several
 specialists take turns on one goal, each step under its own contract's scope so
 no participant ever holds the union.
 
+Requests are not always one task. *"Pull last month's signups into
+./out/signups.md and email it to the board"* is two jobs that, in a workplace,
+belong to two people with two sets of permissions - and asking for both at once
+used to score below every threshold and run ungoverned, so the *less*
+recognisable a request was, the *more* capability it got. Codify now recognises
+that shape, splits the request, and routes each part on its own merits: the
+recognised half runs under its contract's scope, parts that do not depend on each
+other run at the same time, and the half nothing recognises runs on the general
+Agent and is observed - so that once enough people ask for it, it gets a
+specialist of its own.
+
 Start it with `npm run poc`, then open **Codify governance** in the sidebar. The
 review queue is seeded with observed runs, so there is something to approve
 immediately.

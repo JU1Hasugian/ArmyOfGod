@@ -74,6 +74,12 @@ const envSchema = z.object({
    * reaches the network; the lexical channels are exercised on their own there.
    */
   CODIFY_SEMANTIC: z.enum(["true", "false"]).optional(),
+  /**
+   * Splitting a request that contains several tasks. Unlike the other model
+   * calls this one sits on the request path, so it is gated separately and is
+   * only ever reached for prompts that already look compound.
+   */
+  CODIFY_PLANNER: z.enum(["true", "false"]).optional(),
   CODIFY_MIN_OCCURRENCES: z.coerce.number().int().min(1).default(5),
   CODIFY_MIN_DISTINCT_USERS: z.coerce.number().int().min(1).default(3),
   /**
@@ -211,6 +217,10 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
       env.CODIFY_SEMANTIC === undefined
         ? env.NODE_ENV !== "test"
         : env.CODIFY_SEMANTIC === "true",
+    codifyPlannerEnabled:
+      env.CODIFY_PLANNER === undefined
+        ? env.NODE_ENV !== "test"
+        : env.CODIFY_PLANNER === "true",
     codifyMinOccurrences: env.CODIFY_MIN_OCCURRENCES,
     codifyMinDistinctUsers: env.CODIFY_MIN_DISTINCT_USERS,
     codifyMinRefinementUsers: env.CODIFY_MIN_REFINEMENT_USERS,

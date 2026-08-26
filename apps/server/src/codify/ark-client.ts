@@ -19,12 +19,21 @@ export interface DraftedBrief {
   brief: string;
 }
 
-async function complete(
+/**
+ * One model call, returning null on every failure path.
+ *
+ * `enabled` defaults to the drafting gate because that is what all the original
+ * callers are behind, but the planner sits on the request path rather than the
+ * promotion path and carries its own switch — so which feature is asking has to
+ * be answerable per call.
+ */
+export async function complete(
   config: AppConfig,
   instruction: string,
   payload: string,
+  enabled: boolean = config.codifyDraftingEnabled,
 ): Promise<string | null> {
-  if (!config.codifyDraftingEnabled || !config.arkApiKey || !config.arkModel) {
+  if (!enabled || !config.arkApiKey || !config.arkModel) {
     return null;
   }
   const controller = new AbortController();

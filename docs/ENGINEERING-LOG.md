@@ -121,6 +121,7 @@ Lesson worth keeping: a contract check cannot see a colour.
 | budget | `codify/budget.ts` | admission only — a run in flight is never interrupted; spend follows the whole contract lineage so narrowing a scope cannot reset it |
 | coordination | `codify/coordination.ts` | turn selection **is** the router, so each step runs under the matching specialist's scope and the union scope never exists |
 | auto-promotion | `service.autoPromote` | gated by `reviewScope`, which sees a task name and three lists — never prompt text |
+| compound-request splitting | `codify/planner.ts` + `coordination.ts` | one model call, reached only for prompts carrying a compound signature; every fragment is re-routed on its own merits, so the union scope is unreachable through this path |
 
 ### Why `reviewScope` sees no prose
 
@@ -130,6 +131,62 @@ nowhere for an instruction to hide. It is a **tier, not a boundary** — the
 distinct-user floor, frequency floor, never-allow list and secret clamp all hold
 without it. It **fails closed**, unlike every other model call in Codify, because
 failing open there would auto-approve precisely the cases nobody looked at.
+
+### The compound-request hole, and why it needed a different fix
+
+Every other evasion in this codebase is defeated by having two channels that
+fail in opposite directions. **Compounding defeats both at once**, and that is
+why it needed its own mechanism rather than a threshold change.
+
+Padding *adds* text. Containment has the contract in the denominator, so a
+padded prompt still contains every shingle of the exemplar and scores ~1.0. That
+asymmetry is the whole reason containment is in the design.
+
+Compounding *rewords*. To make room for a second task the first is compressed,
+so its shingles stop appearing verbatim — containment collapsed to **0.22** on a
+measured probe — while the embedding, now sitting between two tasks, diluted to
+**0.66** against a 0.72 line. Both channels weakened for the same reason, so
+neither covered for the other, and the prompt ran `unmatched`: ad hoc, with an
+unrestricted network.
+
+That is worse than a miss. It is an *incentive*: the less recognisable a request
+was, the more capability it received. Asking for two things at once was a way to
+get more permission than asking for either.
+
+Two things were built, in that order, and the order was deliberate:
+
+1. **Detection, with no model call.** A contract scoring ≥ 0.85 of its own
+   threshold without clearing it is recorded on the decision as a near match.
+   The band does not collide with real traffic — 2,000 unrelated WildChat
+   prompts peaked at 0.383 semantic, nowhere near the 0.61 line. This alone
+   makes a partly-recognised request distinguishable from a novel one, which it
+   was not before.
+2. **The split.** One model call turns the request into steps with their
+   dependencies; each step is routed *on its own merits* into a plan-backed
+   coordination session. Independent steps run at once; a step whose dependency
+   failed never runs at all.
+
+The design constraint that made this safe to build: **the planner decides
+boundaries, never capability.** Its output is fed back through `route()` rather
+than trusted, so the worst a bad split can produce is a badly-scoped *fragment*
+— never a merged scope. That is asserted directly in `plan-session.test.ts`
+rather than argued for.
+
+The other decision worth recording is where an unrecognised fragment goes. The
+existing `selectParticipant` fallback was longest-idle, which is fair and wrong
+here: it puts novel work in front of a specialist briefed for something else,
+under that specialist's permissions. Unrecognised fragments now go to the
+**general Agent**, and the observation they leave behind is what eventually
+promotes a specialist for them. The platform learns the missing task from its own
+leftovers, which is the same loop the whole system runs on.
+
+**What is not measured, and must be said plainly:** how often the model splits a
+real compound request *correctly*. The parse and rejection rules are unit-tested
+without a network, the wiring is tested with the call stubbed, and every
+rejection path returns the prompt unsplit — but the accuracy of the split itself
+is an open number, and it is the number that decides whether the model call earns
+its place. The harness has the same shape as the §4c generated-probe work and
+needs an `ARK_API_KEY` in the environment.
 
 ---
 
@@ -231,7 +288,7 @@ re-cluster the whole store. One cause, both symptoms.
 
 | test | proves | how to run |
 |---|---|---|
-| `npm run check` | 186 tests, typecheck, both builds | `npm run check` |
+| `npm run check` | 222 tests, typecheck, both builds | `npm run check` |
 | `semantic.live.test.ts` | recognition against a real Ark endpoint | set `ARK_API_KEY` + `ARK_EMBED_MODEL`; skips otherwise |
 | live-demo (49 checks) | the policy **binds** — real Docker, real Codex, derived scope enforced, `ab.chatgpt.com` refused, budget 429, trace, two specialists never sharing a scope | scratch harness, needs a container engine |
 | office run (1,748 prompts) | the **learning loop** from an empty store | scratch harness |
@@ -273,6 +330,12 @@ re-cluster the whole store. One cause, both symptoms.
 **Blocking.** The GitHub repository is **private**. Anonymous clone returns
 404/401, so a reviewer cannot clone it — the first line of the acceptance
 checklist. Nothing else matters until that changes.
+
+**Unmeasured — split quality.** How often the planner splits a real compound
+request correctly (§3). Detection is measured; the split is implemented, safe by
+construction, and unquantified. This is the highest-value open measurement,
+because it is the only claim in the project resting on a model call whose output
+has not been checked against generated ground truth.
 
 **Unmeasured.** The *consistency* claim — that a specialist's output is more
 predictable than a general agent's — still rests on one hand-picked A/B. Three

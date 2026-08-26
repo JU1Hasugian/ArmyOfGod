@@ -128,6 +128,7 @@ export interface RouteDecision {
   score?: number;
   matchChannel?: MatchChannel;
   matchScores?: { fingerprint: number; containment: number; semantic: number };
+  nearMatches?: { contractId: string; name: string; score: number; channel: string }[];
   brokerMode: "observe" | "enforce";
   reason: string;
   createdAt: string;
@@ -228,9 +229,18 @@ export interface RunTrace {
   spans: TraceSpan[];
 }
 
+/** One fragment of a split request, when the session came from one. */
+export interface PlannedStep {
+  text: string;
+  /** Indices of earlier steps whose output this one needs. */
+  dependsOn: number[];
+}
+
 /** One step of a shared session, and who took it. */
 export interface SessionTurn {
   index: number;
+  /** Which step of the plan this turn executes, on a plan-backed session. */
+  stepIndex?: number;
   claimedAt: string;
   agentId: string;
   agentName: string;
@@ -251,6 +261,10 @@ export interface CoordinationSession {
   goal: string;
   createdBy: string;
   participantAgentIds: string[];
+  /** Fixed steps, when the session came from splitting one compound request. */
+  plan?: PlannedStep[];
+  /** Where a step goes when nothing recognises it: the general Agent. */
+  fallbackAgentId?: string;
   turns: SessionTurn[];
   state: Record<string, string>;
   maxTurns: number;

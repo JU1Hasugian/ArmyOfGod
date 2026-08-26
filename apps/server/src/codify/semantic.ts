@@ -94,6 +94,17 @@ export const DEFAULT_CONTAINMENT_THRESHOLD = 0.6;
  */
 export const DEFAULT_SEMANTIC_THRESHOLD = 0.72;
 
+/**
+ * How close to its threshold a contract must score to count as *partially*
+ * recognised rather than unrelated.
+ *
+ * 0.85 of the line. Below that sits real background traffic — 2,000 unrelated
+ * prompts peaked at 0.383, nowhere near 0.61 — so the band separates "this is a
+ * fragment of something we govern" from "this is a different request entirely"
+ * without catching ordinary work.
+ */
+export const NEAR_MATCH_FRACTION = 0.85;
+
 // ------------------------------------------------------------------ storage
 
 /**

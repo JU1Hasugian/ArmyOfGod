@@ -55,7 +55,7 @@ Agent tasks and extended to quality as well as permissions.
 
 ## 2. What Codify does
 
-Six mechanisms, in execution order.
+Ten mechanisms, in execution order.
 
 | # | Mechanism | Where it runs | What it produces |
 |---|---|---|---|
@@ -69,12 +69,22 @@ Six mechanisms, in execution order.
 | ⑦ | **Trace** | Every decision point in a turn | `TraceSpan` — one Run as a connected sequence |
 | ⑧ | **Budget** | Request boundary, before the Run exists | `DenialEvent` of kind `budget` |
 | ⑨ | **Multi-Agent coordination** | Control plane, one turn per call | `CoordinationSession` — each step under its own specialist's scope |
+| ⑩ | **Splitting a compound request** | Request boundary, only when a prompt looks compound | A plan-backed `CoordinationSession` — one step per task, each routed on its own |
 
 **⑤ is where the value lands.** A match does not merely lend the turn a set of
 permissions — it **hands the turn to the specialist**: that Agent's workspace,
 its session, and the brief distilled from every past run. Routing that applied
 permissions alone would govern a turn without improving it, which is the
 difference between a policy engine and a platform that gets better with use.
+
+**⑩ is what stops the router being gameable by accident.** A request that asks
+for two things scores below every threshold — compounding weakens containment
+and the embedding at the same time, which no other evasion does — so before this
+it ran ad hoc with an unrestricted network. The less recognisable a request was,
+the more capability it got. Now it is split, and every fragment is routed on its
+own merits: the recognised half runs under its contract's scope, and the half
+nothing recognises runs on the general Agent and is observed, so that once
+enough people ask for it, it gets a specialist of its own.
 
 **⑥ is what keeps it improving.** One person asking for "more colour" is a
 preference. Several people asking is a defect in the brief — the specialist is
@@ -330,6 +340,35 @@ and effective*, not that a person approves every action.
 something to read. "Promoted automatically" is not checkable; the reviewer's
 actual reasoning is.
 
+### Splitting narrows; it never widens
+
+The obvious way to serve "pull the numbers and email them to the board" is one
+Agent holding both scopes — the warehouse credential *and* the mail domain. That
+is the confused-deputy shape Codify exists to prevent, arrived at by accident
+because nobody wanted to build a decomposer.
+
+So the split produces *fragments*, not a merged request, and each fragment is
+routed exactly as a standalone prompt would be. Three consequences worth being
+explicit about:
+
+- **A bad split produces a badly-scoped fragment, never a merged scope.** The
+  union of two contracts is not reachable through this path, whatever the model
+  returns. This is why the planner's output is fed back through `route()`
+  instead of being trusted.
+- **The planner never decides capability.** It decides *boundaries*. Selection
+  and authorisation stay the same decision, as they are everywhere else in
+  Codify.
+- **An unrecognised fragment goes to the general Agent, not to a specialist.**
+  Handing novel work to whichever specialist is idle would be fair and wrong: it
+  puts unfamiliar work in front of an Agent briefed for something else, with
+  that Agent's permissions. The general Agent has no specialism to contradict
+  and no contract scope to borrow.
+
+The dependency graph exists for the same reason the turn ceiling does. A step
+whose input never arrived must not run — "email it to the board" with no report
+attached is worse than not sending at all — and a plan that cannot make progress
+must stop rather than spin.
+
 ### The narrow-only rule
 
 A reviewer may only ever **remove** from a derived scope. Widening requires the
@@ -395,9 +434,9 @@ contract a human already signed off.
 | `types.ts`, `store.ts` | Ten additive record types with backfill on load. |
 | `config.ts` | Codify settings, the two new match thresholds, `ARK_EMBED_MODEL`, managed-secret pool, per-Agent Codex home, broker base URL. |
 | `store.ts` | Bounded retry around the atomic `rename`, so a transient `EPERM` on the store write no longer fails a run. |
-| `codify/*` | Redaction, fingerprinting, **semantic matching**, scope derivation, **budget**, **trace**, **coordination**, broker lifecycle, Ark client, service, seed corpus. |
+| `codify/*` | Redaction, fingerprinting, **semantic matching**, scope derivation, **budget**, **trace**, **coordination**, **compound-request planning**, broker lifecycle, Ark client, service, seed corpus. |
 | `broker/codify-broker.mjs` | The broker process itself — plain JS, because it is bind-mounted into a container and run by `node` directly. |
-| `App.tsx` | Match channel on the run evidence, `principal_bound` state, on-demand Run trace. |
+| `App.tsx` | Match channel on the run evidence, `principal_bound` state, on-demand Run trace, the split-request banner. |
 | `Governance.tsx` | Review queue, learned improvements, contracts, budgets, shared sessions, denials. |
 
 `CodexRunner` (the in-process / ECS runner) is deliberately **untouched**: scope
@@ -410,22 +449,23 @@ In the Starter Kit's own vocabulary (`docs/ARCHITECTURE.md`), Codify spans the
 
 | Component | Lines |
 |---|---|
-| `codify/service.ts` | 924 |
+| `codify/service.ts` | 1,692 |
+| `codify/coordination.ts` | 452 |
+| `codify/semantic.ts` | 450 |
+| `codify/types.ts` | 321 |
 | `codify/broker-session.ts` | 297 |
-| `broker/codify-broker.mjs` | 266 |
-| `codify/scope.ts` | 180 |
+| `broker/codify-broker.mjs` | 265 |
+| `codify/ark-client.ts` | 249 |
+| `codify/trace.ts` | 212 |
+| `codify/scope.ts` | 207 |
+| `codify/budget.ts` | 184 |
+| `codify/planner.ts` | 178 |
 | `codify/fingerprint.ts` | 174 |
-| `codify/types.ts` | 169 |
-| `codify/ark-client.ts` | 155 |
-| `codify/seed.ts` | 147 |
+| `codify/seed.ts` | 163 |
 | `codify/workspace-diff.ts` | 107 |
 | `codify/redaction.ts` | 88 |
-| `codify/semantic.ts` | 401 |
-| `codify/coordination.ts` | 318 |
-| `codify/trace.ts` | 212 |
-| `codify/budget.ts` | 184 |
-| `Governance.tsx` | 548 |
-| Codify test suites (11 files) | 1,988 |
+| `Governance.tsx` | 923 |
+| Codify test suites (21 files) | 4,797 |
 
 ---
 
@@ -445,6 +485,7 @@ Every setting has a working default; `npm run poc` needs none of them.
 | `CODIFY_MIN_DISTINCT_USERS` | `3` | Distinct people before a cluster can be promoted. Anti-poisoning control. |
 | `CODIFY_MIN_REFINEMENT_USERS` | `2` | Distinct people before a correction becomes a proposed rule. |
 | `CODIFY_LLM_DRAFTING` | on, off under test | Whether promotion and refinement may make a model call. Off ⇒ deterministic fallbacks. |
+| `CODIFY_PLANNER` | on, off under test | Whether a prompt that looks like it asks for several things may be split. This is the one model call on the request path, and it is reached only for prompts carrying a compound signature. Off ⇒ the request runs as one turn. |
 | `CODIFY_SEED_FIXTURES` | `true` | Seed an observed-run corpus on an empty store. |
 | `CODIFY_DEFAULT_USER` | `user-a` | Principal when no `x-codify-user` header is sent. |
 | `CODIFY_BROKER_IMAGE` | Runtime image | Image for the broker container; the Runtime image already has `node`. |
@@ -538,7 +579,7 @@ from §11.
 ## 9. Tests
 
 `npm run check` runs typecheck, the full vitest suite, and both production
-builds. **184 tests across 22 files** (one skipped without an embedding endpoint).
+builds. **222 tests across 26 files** (one skipped without an embedding endpoint).
 
 | Area | What it proves |
 |---|---|
@@ -564,6 +605,8 @@ builds. **184 tests across 22 files** (one skipped without an embedding endpoint
 | **Budget** | Token, run and per-run ceilings each refuse the next turn; spend follows the whole version lineage, so narrowing a scope cannot reset it; an in-flight run counts; a refusal writes a `DenialEvent` and a 429. |
 | **Trace** | Spans share a trace id and a parent, denials roll up, a span left open by a crash closes as an error, flush is idempotent, and a failed write never changes the Run's outcome. |
 | **Coordination** | Turn selection is the router, so a step runs under the matching specialist's scope and the union scope never exists; a second concurrent claim is refused; turns are numbered consecutively; the session stops at the ceiling, after two consecutive failures, or on a declared completion, and the ceiling is checked first. |
+| **Partial recognition** | A prompt that partly recognises a contract without clearing it names that contract on the decision; genuinely unrelated work names nothing; a clean match names nothing. |
+| **Compound requests** | A split runs each fragment under the scope of the contract that recognised *that fragment*, never the union; a fragment nothing recognises goes to the general Agent and is observed for promotion; a step whose dependency failed never runs; independent steps release in one wave and a step is claimed exactly once; a plan that would drop half the request, renumber its steps, or exceed the cap is rejected and the prompt runs whole. |
 | **Cooperation-independent** | A run container with **no proxy variables at all**, dialling a raw IP, gets `ENETUNREACH`. Proves layer 1, not the proxy. |
 | Credential isolation | The container presents a placeholder and upstream sees the real key; an unminted token is rejected; revocation breaks the next call; the real key is absent from `docker inspect`. |
 | Fail-closed | If the broker cannot start, `BrokerSession.start` throws and the run does not proceed. |

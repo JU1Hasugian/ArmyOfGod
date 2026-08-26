@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, setAuthToken, setPrincipal } from "./api";
 import Governance from "./Governance";
-import type { Agent, AgentRun, MatchChannel, Message, RunTrace, SystemInfo } from "./types";
+import type {
+  Agent,
+  AgentRun,
+  CoordinationSession,
+  MatchChannel,
+  Message,
+  RunTrace,
+  SystemInfo,
+} from "./types";
 
 /** Mock principals, as the brief permits. Authorization is server-side. */
 const PRINCIPALS = ["user-a", "user-b", "user-c", "operator"];
@@ -135,6 +143,75 @@ function RunTraceView({ runId }: { runId: string }) {
   );
 }
 
+/**
+ * A request that asked for more than one thing, and what happened to each part.
+ *
+ * Worth showing rather than hiding: the person asked for two things in one
+ * sentence, and the useful answer to "did it do both?" is a list of the parts
+ * with the Agent each went to. It also makes the capability story legible —
+ * every step names the contract that recognised it, and the parts nothing
+ * recognised say so.
+ */
+function SplitBanner({
+  session,
+  onDismiss,
+}: {
+  session: CoordinationSession;
+  onDismiss: () => void;
+}) {
+  const plan = session.plan ?? [];
+  if (plan.length < 2) return null;
+  const turnFor = (stepIndex: number) =>
+    session.turns.find((turn) => turn.stepIndex === stepIndex);
+  const parallel = plan.filter((step) => step.dependsOn.length === 0).length;
+
+  return (
+    <div className="split-banner" role="status">
+      <span aria-hidden="true">⑂</span>
+      <div className="split-body">
+        <strong>This request asked for {plan.length} things</strong>
+        <p>
+          Each part is routed on its own, so a part runs under the permissions of the
+          contract that recognised <em>that part</em> — never the two combined.
+          {parallel > 1
+            ? " " + parallel + " of them do not depend on each other, so they ran at the same time."
+            : " Each part waits for the one it needs."}
+        </p>
+        <ol className="split-steps">
+          {plan.map((step, index) => {
+            const turn = turnFor(index);
+            return (
+              <li key={index} className={"split-step split-" + (turn?.status ?? "pending")}>
+                <span className="split-text">{step.text}</span>
+                <span className="split-where">
+                  {turn ? (
+                    <>
+                      <strong>{turn.agentName}</strong>
+                      {turn.contractName ? (
+                        <em> · {turn.contractName}</em>
+                      ) : (
+                        <em> · no contract yet — observed for promotion</em>
+                      )}
+                    </>
+                  ) : (
+                    <em>waiting for step {step.dependsOn.map((entry) => entry + 1).join(", ")}</em>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+        {session.status !== "active" && session.stopReason && (
+          <p className="split-stop">{session.stopReason}</p>
+        )}
+      </div>
+      <button onClick={onDismiss} aria-label="Dismiss">
+        ×
+      </button>
+    </div>
+  );
+}
+
 function RunEvidence({ run }: { run: AgentRun }) {
   const codify = run.codify;
   if (!codify) return null;
@@ -229,6 +306,7 @@ export default function App() {
     from: string;
     to: string;
   } | null>(null);
+  const [splitSession, setSplitSession] = useState<CoordinationSession | null>(null);
   const [authRequired, setAuthRequired] = useState<boolean | null>(null);
   const [authInput, setAuthInput] = useState("");
   const messageEnd = useRef<HTMLDivElement>(null);
@@ -402,6 +480,29 @@ export default function App() {
     }
   };
 
+  /**
+   * Follow a split request until every step has run.
+   *
+   * The steps execute on the server after the first one is dispatched, so the
+   * only way the page learns a later step finished is to ask.
+   */
+  const pollSession = async (sessionId: string) => {
+    for (let attempt = 0; attempt < 600; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      if (!mountedRef.current) return;
+      try {
+        const { session } = await api.session(sessionId);
+        setSplitSession((current) => (current?.id === sessionId ? session : current));
+        if (session.status !== "active") {
+          await refreshAgents();
+          return;
+        }
+      } catch {
+        return;
+      }
+    }
+  };
+
   const sendMessage = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selected || !prompt.trim()) return;
@@ -410,6 +511,12 @@ export default function App() {
     setError(null);
     try {
       const result = await api.sendMessage(selected.id, content, forceAdHoc);
+      setSplitSession(result.session ?? null);
+      if (result.session) {
+        // The request was split, so the later steps are still running on other
+        // Agents. Follow the plan rather than one run's conversation.
+        void pollSession(result.session.id);
+      }
       if (result.delegatedTo) {
         // The platform recognised the task and handed it to the specialist, so
         // the turn lives in that Agent's conversation. Follow it there rather
@@ -735,6 +842,10 @@ export default function App() {
                   </div>
                   <button onClick={() => setDelegationNotice(null)}>×</button>
                 </div>
+              )}
+
+              {splitSession && (
+                <SplitBanner session={splitSession} onDismiss={() => setSplitSession(null)} />
               )}
 
               <div className="messages">

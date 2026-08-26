@@ -533,6 +533,124 @@ see `docs/CODIFY.md` on why promotion is reviewer-gated rather than free.
 
 ---
 
+## 4d. A request that asks for two things
+
+Every measurement above is of a prompt that asks for one task. Real requests are
+not always that tidy:
+
+> *Pull last month's signups into ./out/signups.md and email it to the board.*
+
+That is two jobs, and in a workplace they belong to two people with two sets of
+permissions. `route()` scores the whole prompt against every contract and takes
+the single best match, so before this it could only ever pick one.
+
+### What compounding does to the scores
+
+Four probes against a store holding two contracts — a SQL report task and a
+weekly status task — with the real embedding endpoint:
+
+| probe | routed to | fingerprint | containment | semantic |
+|---|---|---|---|---|
+| the SQL task alone | sql-report ✓ | 0.14 | 0.29 | 0.93 |
+| SQL task + status task, both stated in full | weekly-status | 0.28 | 0.68 | 0.76 |
+| "query the warehouse **and email the summary to the board**" | **unmatched** | 0.13 | 0.22 | 0.66 |
+| status task first, SQL task second | sql-report | 0.33 | 0.65 | 0.70 |
+
+Row 3 is the one that matters, and it is a different failure from every other
+one in this document.
+
+**Compounding is the only evasion that weakens both channels at once.** Padding
+*adds* text: every shingle of the contract is still present, so containment
+stays at or near 1.0 — that asymmetry is the whole reason containment is in the
+design (§2). Compounding *rewords*: the recognised half is compressed to make
+room for the second task, so its shingles stop appearing verbatim and
+containment collapses to 0.22. At the same time the embedding now sits between
+two tasks and dilutes to 0.66, below the 0.72 line. Neither channel covers for
+the other, because the thing that broke them is the same thing.
+
+The consequence is perverse, and it is the same incentive problem §6 was written
+about: an unmatched turn runs ad hoc with an unrestricted network, so **the less
+recognisable a request is, the more capability it receives**. Asking for two
+things at once was, before this, a way to get more permission than asking for
+either of them.
+
+### The detection
+
+A contract that scores at least **0.85 of its own threshold** without clearing it
+is recorded on the decision as a *near match* — `RouteDecision.nearMatches`.
+`0.85 × 0.60 = 0.51` on containment; `0.85 × 0.72 = 0.61` on the embedding.
+
+That band does not collide with ordinary traffic. The 2,000 unrelated WildChat
+prompts of §4b peaked at **0.383** semantic against any contract — nowhere near
+0.61. The band is a signature of partial recognition, not a lower threshold.
+
+Detection alone is worth having: a turn that partly recognises several contracts
+and clears none now says so, in the decision and in the audit record, instead of
+being indistinguishable from a genuinely novel request.
+
+### The split
+
+Detection then triggers one model call that splits the request into steps with
+their dependencies — `codify/planner.ts` — and each step is routed **on its own
+merits** into a plan-backed coordination session (§ CODIFY ⑩).
+
+Three properties are the reason this is a capability control rather than an
+orchestrator:
+
+1. **A step runs under the scope of the contract that recognised *that step*.**
+   Not the union of two contracts, and not the scope of whichever contract
+   scored best on the compound prompt. The union scope is not reachable through
+   this path at all — asserted in `plan-session.test.ts`.
+2. **A fragment nothing recognises goes to the general Agent**, not to the
+   idle specialist. Novel work belongs where all novel work starts, and the
+   observation it leaves is what eventually promotes a specialist for it. The
+   platform learns the missing task from its own leftovers.
+3. **A step whose dependency failed does not run.** "Email it to the board" with
+   no report is worse than not sending at all.
+
+Steps whose dependencies are met run **at the same time**; only genuine data
+dependencies serialise them. That is why the plan is a graph rather than a list:
+"audit the dependencies" and "write the status update" have no reason to wait
+for each other, while "email the report" plainly does.
+
+### Cost, and when it is paid
+
+The planner is one model call and it is **not** on the ordinary path. It runs
+only for a prompt that already carries one of two compound signatures:
+
+- nothing cleared a threshold but at least one contract landed in the near band;
+  or
+- something cleared, but the prompt is at least **1.25×** longer than the
+  longest exemplar of the contract it matched. Containment is deliberately blind
+  to what a prompt *adds*, so "the recognised task, and also this other thing"
+  matches at 1.0 — and the extra clause would then run under the specialist's
+  scope and be refused at the broker. Safe, but not useful.
+
+Every rejection path returns the prompt unsplit: an unreachable model, an
+unparseable reply, a plan that renumbered its own steps, a plan that dropped
+more than half the request, more than five fragments, or a "split" that produced
+one step. A planner that misbehaves costs the split and nothing else. Those
+rules are unit-tested in `planner.test.ts` without a network, because the rules
+are the part that has to be right.
+
+### What is not yet measured
+
+**Split quality against the live endpoint has not been measured.** The parse and
+rejection rules are tested deterministically, and the wiring is tested with the
+model call stubbed — but how often the model splits a real compound request
+*correctly* is an open number, and it is the number that decides whether this
+feature earns its model call. The harness to produce it is the same shape as
+§4c: generate compound prompts from known task pairs, split them, and check each
+fragment routes to the contract it came from. It needs an `ARK_API_KEY` in the
+environment to run.
+
+Until that measurement exists, the honest claim is narrower than the feature:
+*the detection is measured, the split is implemented and safe by construction —
+every fragment is narrower than the prompt it came from — and its accuracy is
+unquantified.*
+
+---
+
 ## 5. What this does not fix
 
 - **Word order.** On PAWS, whose pairs are built to share vocabulary while
@@ -547,7 +665,12 @@ see `docs/CODIFY.md` on why promotion is reviewer-gated rather than free.
 - **Routing still fails open.** A prompt that clears no channel runs ad hoc. The
   attack surface is much smaller than it was, but "evade the router, lose the
   scope" remains structurally true. Closing it needs a promoted specialist that
-  refuses unmatched prompts outright — see §6.
+  refuses unmatched prompts outright — see §6. The compound case, where the
+  fail-open was *rewarded* rather than merely available, is handled separately
+  in §4d.
+- **How well the planner splits is unmeasured.** §4d. The detection is measured
+  and every fragment is narrower than the request it came from, but the accuracy
+  of the split itself is an open number.
 - **The semantic channel can be absent.** No endpoint, an unactivated model, an
   exhausted retry budget: matching degrades to the lexical channels, which is
   the behaviour the platform had before. `/api/system` reports

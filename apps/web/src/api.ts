@@ -100,7 +100,12 @@ export const api = {
   runs: (id: string) =>
     request<{ runs: AgentRun[] }>("/api/agents/" + id + "/runs"),
   sendMessage: (id: string, content: string, forceAdHoc = false) =>
-    request<{ run: AgentRun; message: Message; delegatedTo?: Agent }>(
+    request<{
+      run: AgentRun;
+      message: Message;
+      delegatedTo?: Agent;
+      session?: CoordinationSession;
+    }>(
       "/api/agents/" + id + "/messages",
       {
         method: "POST",
@@ -108,6 +113,8 @@ export const api = {
       },
     ),
   run: (id: string) => request<{ run: AgentRun }>("/api/runs/" + id),
+  session: (id: string) =>
+    request<{ session: CoordinationSession }>("/api/codify/sessions/" + id),
 
   candidates: () =>
     request<{ candidates: TaskCandidate[] }>("/api/codify/candidates"),

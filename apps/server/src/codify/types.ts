@@ -264,6 +264,27 @@ export interface RouteDecision {
   matchChannel?: "fingerprint" | "containment" | "semantic";
   /** Every channel's score, so a near miss is visible in the audit record. */
   matchScores?: { fingerprint: number; containment: number; semantic: number };
+  /**
+   * Contracts that scored close to their threshold without clearing it.
+   *
+   * The distinction this exists to draw is between "nothing here is familiar"
+   * and "parts of this are familiar" — currently both land as `unmatched` and
+   * both run ungoverned, which is backwards. A prompt combining a governed task
+   * with a second one scores below every line, because compounding weakens both
+   * channels at once: containment collapses (the exemplar's shingles are not
+   * present verbatim in a reworded half) and the embedding dilutes (the prompt
+   * sits between two contracts). Measured at containment 0.22 / semantic 0.66
+   * against lines of 0.60 and 0.72.
+   *
+   * The consequence is perverse and is the reason this is recorded: the *less*
+   * recognisable a request, the *more* capability it receives.
+   */
+  nearMatches?: { contractId: string; name: string; score: number; channel: string }[];
+  /**
+   * The plan-backed session this turn became, when the request asked for
+   * several things. The turn itself produces no run: each step does.
+   */
+  splitSessionId?: string;
   brokerMode: BrokerMode;
   reason: string;
   createdAt: string;
