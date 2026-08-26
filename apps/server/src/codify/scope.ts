@@ -29,6 +29,33 @@ export const MAX_DERIVED_DOMAINS = 5;
 
 export const EMPTY_SCOPE: CapabilityScope = { paths: [], domains: [], secrets: [] };
 
+/**
+ * Reduce a derived scope to what may be granted without a human looking at it.
+ *
+ * Only ever removes. Returns both the clamped scope and what was withheld, so
+ * the caller can record the difference rather than silently losing it — a
+ * capability that was observed and then withheld is exactly the thing an
+ * operator later needs to see justified.
+ *
+ * Secrets are the sharp edge and are withheld by default. A path or a domain
+ * that a task demonstrably used is a narrowing of what an ad-hoc run already
+ * had; a credential handed to a newly-minted principal is not.
+ */
+export function clampForAutoGrant(
+  derived: CapabilityScope,
+  options: { grantSecrets: boolean },
+): { scope: CapabilityScope; withheld: CapabilityScope } {
+  const secrets = options.grantSecrets ? derived.secrets : [];
+  return {
+    scope: { paths: derived.paths, domains: derived.domains, secrets },
+    withheld: {
+      paths: [],
+      domains: [],
+      secrets: options.grantSecrets ? [] : derived.secrets,
+    },
+  };
+}
+
 function frequent<T extends string>(lists: T[][], floor: number): T[] {
   if (lists.length === 0) return [];
   const counts = new Map<T, number>();

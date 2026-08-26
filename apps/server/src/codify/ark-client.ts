@@ -153,3 +153,88 @@ export async function draftRule(
   const first = raw.split(/\n/)[0]?.trim() ?? "";
   return first ? first.slice(0, 200) : null;
 }
+
+const REVIEW_INSTRUCTION = [
+  "You are a security reviewer for an agent platform. You are given a task name",
+  "and the capability scope that was DERIVED from what that task's past runs",
+  "actually did. Decide whether each capability is plausibly necessary for that",
+  "task, or whether it looks like something that should not become a standing",
+  "allowance.",
+  "",
+  "Flag a capability when it is not explicable by the task: a host that looks",
+  "like an exfiltration or paste endpoint rather than a service the task would",
+  "legitimately use, a credential the task has no evident need for, a writable",
+  "path far outside what the task produces.",
+  "",
+  "Do not flag a capability merely because it is powerful. A task that publishes",
+  "to a service will legitimately reach that service.",
+  "",
+  "Reply with exactly this shape and nothing else:",
+  "VERDICT: ALLOW or REVIEW",
+  "FLAGGED: a comma-separated list of the exact capability strings you object",
+  "to, or NONE",
+  "REASON: one sentence, at most 30 words",
+].join("\n");
+
+export interface ScopeReview {
+  verdict: "allow" | "review";
+  flagged: string[];
+  reason: string;
+}
+
+/**
+ * Ask the model whether a derived scope is plausible for its task.
+ *
+ * ## Why this is safe to automate, and what it is not
+ *
+ * The reviewer sees **structured, derived facts** — a task name and lists of
+ * hosts, paths and credential names — and never the prompts those facts came
+ * from. That matters more than it looks. The observations are written by users,
+ * so if the reviewer read prompt text it would be reading attacker-influenceable
+ * prose and could be argued with. A hostname and a path have nowhere for an
+ * instruction to hide.
+ *
+ * It is a *tier*, not a boundary. A model filter lowers the rate at which
+ * implausible capability is auto-granted; it does not guarantee. The structural
+ * controls stay underneath it and do not depend on it: the distinct-user
+ * threshold, the frequency floor, the never-allow list, the secret clamp, and
+ * the fact that a derived scope is narrower than the unbounded ad-hoc run it
+ * replaces.
+ *
+ * Unreachable or unparseable ⇒ `review`. This is the one model call in Codify
+ * that fails *closed*, because failing open here would auto-grant exactly the
+ * cases nobody looked at.
+ */
+export async function reviewScope(
+  config: AppConfig,
+  input: { taskName: string; domains: string[]; writablePaths: string[]; secrets: string[] },
+): Promise<ScopeReview> {
+  const payload = [
+    "TASK: " + input.taskName,
+    "NETWORK: " + (input.domains.join(", ") || "none"),
+    "WRITABLE: " + (input.writablePaths.join(", ") || "none"),
+    "CREDENTIALS: " + (input.secrets.join(", ") || "none"),
+  ].join("\n");
+
+  const raw = await complete(config, REVIEW_INSTRUCTION, payload);
+  if (!raw) {
+    return {
+      verdict: "review",
+      flagged: [],
+      reason: "The reviewer was unreachable, so this was not auto-approved.",
+    };
+  }
+  const verdict = /VERDICT:\s*ALLOW/i.test(raw) ? "allow" : "review";
+  const flaggedLine = raw.match(/^FLAGGED:\s*(.+)$/im)?.[1]?.trim() ?? "";
+  const flagged =
+    !flaggedLine || /^none$/i.test(flaggedLine)
+      ? []
+      : flaggedLine.split(",").map((entry) => entry.trim()).filter(Boolean).slice(0, 12);
+  const reason = (raw.match(/^REASON:\s*(.+)$/im)?.[1] ?? "").trim().slice(0, 200);
+  // A verdict of ALLOW that still names objections is self-contradictory; treat
+  // the objection as the real signal.
+  if (verdict === "allow" && flagged.length > 0) {
+    return { verdict: "review", flagged, reason: reason || "The reviewer named a concern." };
+  }
+  return { verdict, flagged, reason };
+}

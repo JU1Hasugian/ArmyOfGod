@@ -23,7 +23,7 @@ import {
   clusterKey,
   fingerprint,
 } from "./fingerprint.js";
-import { draftBrief, draftRule } from "./ark-client.js";
+import { draftBrief, draftRule, reviewScope } from "./ark-client.js";
 import {
   bestMatch,
   clusterByMatch,
@@ -33,7 +33,7 @@ import {
   type MatchThresholds,
 } from "./semantic.js";
 import { redact, redactValue } from "./redaction.js";
-import { checkNarrowing, deriveScope, normalizeScope } from "./scope.js";
+import { checkNarrowing, clampForAutoGrant, deriveScope, normalizeScope } from "./scope.js";
 import { checkBudget, normalizeBudget, usageForContract } from "./budget.js";
 import { traceForRun, type TraceSummary } from "./trace.js";
 import {
@@ -62,6 +62,9 @@ import type {
 } from "./types.js";
 
 const now = () => new Date().toISOString();
+
+/** Principal recorded as `createdBy` when no person approved a contract. */
+const AUTO_PROMOTER = "codify-auto";
 
 /** Parallel embedding calls during the backfill pass. */
 const EMBED_BACKFILL_CONCURRENCY = 6;
@@ -827,6 +830,100 @@ export class CodifyService {
       }
       return structuredClone(database.candidates);
     });
+  }
+
+  /**
+   * Promote every pending candidate that a reviewer model finds plausible.
+   *
+   * The human gate was protecting against one thing: *laundering*. Promotion
+   * does not grant capability — the runs a candidate is derived from already
+   * reached those hosts and wrote those paths, ad hoc and unbounded, so the
+   * derived scope is a narrowing of what they already had. What review actually
+   * guards is the step from "one run did this" to "this is now a standing
+   * allowance for everyone who asks".
+   *
+   * That is a judgement about whether a capability fits its task, and it is made
+   * against structured facts — hostnames, paths, credential names — with none of
+   * the prompt text those facts were derived from. So it is delegated, and a
+   * person is left with only what the reviewer would not sign off.
+   *
+   * Anything the reviewer flags stays pending. It is not rejected: the evidence
+   * for it accumulates as denials the moment a narrower sibling contract runs,
+   * and the escalation path already knows how to turn recorded denials into a
+   * proposed widening.
+   */
+  async autoPromote(
+    createAgent: (agent: { name: string; description: string; instructions: string }) => Promise<Agent>,
+  ): Promise<{ promoted: TaskContract[]; heldForReview: { id: string; reason: string }[] }> {
+    if (!this.config.codifyAutoPromote) return { promoted: [], heldForReview: [] };
+
+    const promoted: TaskContract[] = [];
+    const heldForReview: { id: string; reason: string }[] = [];
+
+    for (const candidate of this.listCandidates()) {
+      if (candidate.status !== "pending") continue;
+
+      const derived = normalizeScope(candidate.proposedScope);
+      const { scope, withheld } = clampForAutoGrant(derived, {
+        grantSecrets: this.config.codifyAutoGrantSecrets,
+      });
+
+      const review = await reviewScope(this.config, {
+        taskName: candidate.proposedName,
+        domains: scope.domains,
+        writablePaths: scope.paths.filter((entry) => entry.mode === "rw").map((entry) => entry.path),
+        secrets: scope.secrets,
+      });
+
+      if (review.verdict === "review") {
+        heldForReview.push({
+          id: candidate.id,
+          reason:
+            review.reason ||
+            "The reviewer would not sign this off." +
+              (review.flagged.length ? " Flagged: " + review.flagged.join(", ") : ""),
+        });
+        continue;
+      }
+
+      try {
+        const { contract } = await this.approveCandidate(
+          candidate.id,
+          // The clamp only ever removes, so this always satisfies the
+          // narrow-only rule `approveCandidate` enforces.
+          { scope, userId: AUTO_PROMOTER },
+          createAgent,
+        );
+        promoted.push(contract);
+        if (withheld.secrets.length > 0) {
+          // Recorded rather than dropped: a capability that was observed and
+          // then withheld is precisely what an operator later needs to see
+          // justified, and this is the same stream an egress refusal lands in.
+          await this.store.mutate((database) => {
+            for (const secret of withheld.secrets) {
+              database.denialEvents.push({
+                id: randomUUID(),
+                runId: candidate.exemplarRunIds[0] ?? candidate.id,
+                agentId: contract.agentId,
+                contractId: contract.id,
+                contractVersion: contract.version,
+                kind: "secret",
+                target: secret,
+                reason:
+                  "Observed in this task's runs but not auto-granted. A credential " +
+                  "is the one capability worth a human, so it needs the escalation path.",
+                outcome: "blocked",
+                at: now(),
+              });
+            }
+          });
+        }
+      } catch {
+        // A candidate that cannot be promoted right now — a name collision, a
+        // concurrent decision — is simply left pending for the next pass.
+      }
+    }
+    return { promoted, heldForReview };
   }
 
   listCandidates(): TaskCandidate[] {

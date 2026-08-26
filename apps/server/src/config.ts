@@ -89,6 +89,32 @@ const envSchema = z.object({
    * under test so the suite never reaches the network.
    */
   CODIFY_LLM_DRAFTING: z.enum(["true", "false"]).optional(),
+  /**
+   * Promote a candidate the moment it clears its thresholds, with no human in
+   * the loop.
+   *
+   * Defensible because promotion does not *grant* capability — the runs it is
+   * derived from already reached those hosts and wrote those paths, ad hoc and
+   * unbounded. The derived scope IS that behaviour, so promoting narrows rather
+   * than widens. What review is actually protecting against is *laundering*:
+   * turning one bad run into a standing allowance for people who never asked.
+   * `CODIFY_AUTO_GRANT_SECRETS` is where that risk concentrates, so it is off.
+   */
+  CODIFY_AUTO_PROMOTE: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
+  /**
+   * Whether an auto-promoted contract may receive credentials it was observed
+   * using. Off by default: handing a brand-new principal a credential is the one
+   * step that genuinely widens reach, and it is the one worth a human. A
+   * clamped contract still runs — it is simply denied, and those denials are the
+   * evidence the escalation path already requires.
+   */
+  CODIFY_AUTO_GRANT_SECRETS: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
   /** Fallback principal when a request carries no x-codify-user header. */
   CODIFY_DEFAULT_USER: z.string().trim().min(1).max(64).default("user-a"),
   /** Seed the observed-run corpus on first boot so the queue is not empty. */
@@ -178,6 +204,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
       env.CODIFY_LLM_DRAFTING === undefined
         ? env.NODE_ENV !== "test"
         : env.CODIFY_LLM_DRAFTING === "true",
+    codifyAutoPromote: env.CODIFY_AUTO_PROMOTE,
+    codifyAutoGrantSecrets: env.CODIFY_AUTO_GRANT_SECRETS,
     codifyDefaultUser: env.CODIFY_DEFAULT_USER,
     codifySeedFixtures: env.CODIFY_SEED_FIXTURES,
     codifyManagedSecrets: readManagedSecrets(environment),

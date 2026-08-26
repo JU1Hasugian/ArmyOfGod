@@ -398,6 +398,40 @@ contract. Deployments that want the stricter trade have
 > produced it is a tuned constant; one that survived two principled alternatives
 > is a decision.
 
+### The loop, streamed
+
+Everything above holds the contracts fixed, which isolates the router but cannot
+test the claim the product actually makes - *person 51 gets the specialist*. That
+claim is about the whole loop, and it can fail in three places a fixed-contract
+benchmark cannot see: clustering is order-dependent, promotion takes the first
+distinct fingerprints rather than the most representative, and a contract built
+from wordings 1-5 may simply not cover wordings 6-30.
+
+So: the real service, the real store, 100 prompts one at a time in arrival order
+- two task families interleaved, 40 unrelated WildChat prompts mixed in,
+promotion firing automatically the moment a candidate clears its thresholds.
+
+| | |
+|---|---|
+| release-notes | promoted at prompt **12** (5 runs / 5 users) - scope `["github.com"]` |
+| dep-audit | promoted at prompt **13** (5 runs / 5 users) - scope `["registry.npmjs.org"]` |
+| carryover | **25/25** and **25/25** later wordings routed to the right specialist |
+| misrouted | 0 - **failed open** 0 |
+| unrelated traffic | **0/40** routed - **0** contracts promoted from noise |
+
+Every one of the fifty post-promotion matches landed on the **semantic** channel,
+which is consistent with the ablation: the lexical channels recognise 1.7% of
+independently-written rewordings, so they contribute nothing to carryover.
+
+The two derived scopes stayed distinct - `github.com` versus
+`registry.npmjs.org`, never the union - which is the property the coordination
+tests assert, here arrived at without anyone choosing it.
+
+This is what made auto-promotion defensible rather than merely convenient:
+promotion fires at the threshold from a natural arrival order, the earliest
+exemplars turn out to be good enough that *every* subsequent wording lands, and
+forty unrelated prompts neither promote nor route.
+
 ---
 
 ## 5. What this does not fix

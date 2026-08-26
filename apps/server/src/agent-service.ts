@@ -623,6 +623,12 @@ export class AgentService {
           decision: context.decision,
           evidence: captured,
         });
+        // Detection runs on the evidence this turn just produced, and anything
+        // that clears its thresholds is promoted without waiting for someone to
+        // open the review queue. `autoPromote` is a no-op when the switch is off
+        // or when the reviewer withholds its approval.
+        await this.codify.refreshCandidates();
+        await this.codify.autoPromote((agent) => this.createAgent(agent));
         // The broker's own JSONL is the source of truth for what happened at
         // the boundary; the trace only gives those facts an ordering and a
         // parent, so a reviewer reads one sequence instead of two logs.

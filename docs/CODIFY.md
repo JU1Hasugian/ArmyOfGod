@@ -63,7 +63,7 @@ Six mechanisms, in execution order.
 | ② | **Capability instrumentation** | Broker + workspace diff, per run | `CapabilityObservation` — hosts reached, paths written, secrets granted |
 | ③ | **Clustering & detection** | Pass over the store | `TaskCandidate` at ≥5 runs from ≥3 distinct users |
 | ③b | **Semantic matching** | Request boundary + detection pass | Three match channels — fingerprint, containment, embedding — combined with OR |
-| ④ | **Promotion** (human-gated) | `CodifyService` + one model call | Specialist Agent + `TaskContract`: a drafted **brief** and a derived **scope** |
+| ④ | **Promotion** (auto, reviewer-gated) | `CodifyService` + two model calls | Specialist Agent + `TaskContract`: a drafted **brief** and a derived **scope** |
 | ⑤ | **Routing, delegation & enforcement** | Pre-run hook + container launch + broker | `RouteDecision`, `DenialEvent` |
 | ⑥ | **Refinement from repeated corrections** | Pass over the store + one model call | `RefinementProposal` → a new contract version |
 | ⑦ | **Trace** | Every decision point in a turn | `TraceSpan` — one Run as a connected sequence |
@@ -245,6 +245,54 @@ making it a cross-Agent channel: any Agent could read another's session
 transcripts or rewrite the generated `config.toml`. Codify gives each Agent its
 own directory. Session resume is unaffected, because a thread only ever resumes
 inside the Agent that created it.
+
+### Why promotion no longer waits for a person
+
+The original design gated promotion on human approval. That was the wrong shape,
+for a reason worth stating plainly: **promotion does not grant capability.**
+
+The runs a candidate is derived from already reached those hosts and wrote those
+paths - ad hoc, unbounded, with no contract at all. The derived scope *is* that
+behaviour. So promoting a task is a *narrowing* of what it already had, and a
+gate that delays it is a gate that keeps the task unbounded for longer.
+
+What review was actually protecting against is narrower: **laundering**. Turning
+what one run happened to do into a standing allowance that applies to people who
+never asked for it. That is a judgement about whether a capability fits its
+task - and it is made against structured, derived facts.
+
+So it is delegated. `reviewScope` sees a task name and three lists - hostnames,
+writable paths, credential names - and nothing else. That constraint is the whole
+reason it can be trusted at all: the observations behind those facts are written
+by users, so a reviewer reading *prompt text* would be reading
+attacker-influenceable prose and could be argued with. A hostname has nowhere for
+an instruction to hide.
+
+It is a **tier, not a boundary.** A model filter lowers the rate at which
+implausible capability is auto-granted; it does not guarantee. Everything
+structural stays underneath it and none of it depends on the model:
+
+| control | still holds without the reviewer |
+|---|---|
+| distinct-user floor | one person repeating a prompt never reaches promotion |
+| frequency floor | a 1-of-7 domain is not derivable |
+| never-allow list | metadata endpoints are never derivable |
+| secret clamp | credentials are withheld from an auto-grant by default |
+| the scope itself | narrower than the unbounded ad-hoc run it replaces |
+
+Two asymmetries are deliberate. `reviewScope` **fails closed** - unreachable or
+unparseable means the candidate stays pending - because failing open there would
+auto-approve exactly the cases nobody looked at. And a flagged candidate is
+*held*, never rejected: the human queue still exists, it just only ever contains
+what the reviewer would not sign.
+
+Credentials are the one capability withheld by default
+(`CODIFY_AUTO_GRANT_SECRETS=false`). A host or a path a task demonstrably used is
+a narrowing; handing a brand-new principal a credential is the one step that
+genuinely widens reach. The withheld secret is recorded as a `DenialEvent`, so
+the evidence for granting it accumulates in the same stream an egress refusal
+lands in, and the escalation path already knows how to turn recorded denials into
+a proposed widening.
 
 ### The narrow-only rule
 
@@ -454,7 +502,7 @@ from §11.
 ## 9. Tests
 
 `npm run check` runs typecheck, the full vitest suite, and both production
-builds. **174 tests across 20 files** (one skipped without an embedding endpoint).
+builds. **181 tests across 21 files** (one skipped without an embedding endpoint).
 
 | Area | What it proves |
 |---|---|
