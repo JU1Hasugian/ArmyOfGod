@@ -1,0 +1,28 @@
+# Line endings are a checkout-time decision, and the default on Windows is to
+# make one that breaks this repository.
+#
+# `core.autocrlf=true` is Git's Windows default, and it rewrites text files to
+# CRLF as they land in the working tree. The committed blobs stay LF — that part
+# was verified twice and is not the problem. The problem is the shebang: a
+# checkout of `scripts/start-local-poc.sh` becomes `#!/usr/bin/env bash\r`, and
+# the kernel then looks for an interpreter literally named `bash\r`:
+#
+#   /usr/bin/env: 'bash\r': No such file or directory
+#
+# So `npm run poc` — the one command the setup instructions give — fails on a
+# Windows clone driven from WSL, which is the exact configuration this project
+# is developed and demonstrated on.
+#
+# Pinning the working-tree ending here overrides the user's autocrlf setting for
+# this repository, so the checkout is correct whatever the reviewer's machine is
+# configured to do.
+* text=auto eol=lf
+
+# Belt and braces for the files where a stray CR is fatal rather than untidy.
+*.sh text eol=lf
+*.mjs text eol=lf
+
+# Never touch bytes that are not text.
+*.jpg binary
+*.png binary
+*.ico binary

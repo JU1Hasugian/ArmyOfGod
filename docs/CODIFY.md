@@ -96,6 +96,50 @@ change goes through.
 
 ## 3. Architecture
 
+One turn, end to end. The dashed line is the trust boundary: raw prompt text and
+the real provider key are on the left of it and never cross.
+
+```mermaid
+flowchart TB
+    subgraph EX["Experience — deliberately thin"]
+        PG["Playground · one conversation"]
+        GOV["Governance · candidates, contracts,<br/>learned rules, denials, trace"]
+    end
+
+    subgraph CP["Control plane — Fastify · AgentService · CodifyService"]
+        RED["① redact<br/><i>only the redacted form is stored</i>"]
+        MATCH["③ match — fingerprint OR containment OR embedding<br/><i>ORed: each evasion is invisible to one channel</i>"]
+        ROUTE["⑤a route<br/>matched → contract scope + brief<br/>specialist, unmatched → principal_bound<br/>otherwise → ad hoc, observed"]
+        BUD["⑧ budget — at admission<br/><i>over ⇒ 429 before the Run exists</i>"]
+        GATE["④ promote · ⑥ refine · operator-gated decisions<br/><i>narrowing only; secrets stay human-gated</i>"]
+    end
+
+    subgraph RT["Agent Runtime — ENFORCEMENT BOUNDARY"]
+        CTR["⑤c container<br/>network --internal · no route off-host<br/>workspace ro + scope rw paths<br/><i>a write elsewhere ⇒ EROFS</i>"]
+        BRK["⑤d broker — the only way out<br/>allowlist = scope.domains<br/>holds the real Ark key<br/><i>deny ⇒ DenialEvent</i>"]
+    end
+
+    STORE[("Data layer — JsonStore<br/>observations · contracts · decisions<br/>denials · spans · sessions")]
+
+    PG --> RED --> MATCH --> ROUTE --> BUD --> CTR
+    CTR --> BRK
+    BRK -.->|"② what it reached, read, wrote"| STORE
+    CTR -.->|"⑦ spans: route, budget, runtime, egress"| STORE
+    STORE ==>|"the loop: repetition ⇒ a brief and a policy"| GATE
+    GATE ==> ROUTE
+    STORE --> GOV
+
+    BRK -->|allowlisted only| NET(["the internet"])
+
+    classDef boundary stroke-dasharray: 6 4
+    class RT boundary
+```
+
+The loop is the double arrow: everything a run does is observed, and enough
+observations of the same task produce both the brief and the policy for it.
+
+The same picture with the detail a reader eventually wants:
+
 ```
 ┌──────────── Experience layer (deliberately thin) ─────────────────────┐
 │  Playground + handoff banner │ Candidate review │ Learned improvements │

@@ -571,6 +571,27 @@ Two more traps, both of which cost time here:
   wall-clock duration before believing a result: eight planner probes take
   roughly 4–8 s.
 
+**`npm run poc` was broken on a Windows clone, and the CRLF investigation in §6
+is why it stayed broken.** That entry concluded — correctly, twice — that the
+committed blobs are clean LF. True, and beside the point: `core.autocrlf=true`
+is Git's Windows default and rewrites text files *on checkout*, so
+`scripts/start-local-poc.sh` lands with a `\r` on its shebang and the kernel
+looks for an interpreter named `bash\r`:
+
+```
+/usr/bin/env: 'bash\r': No such file or directory
+```
+
+The one command the setup instructions give, failing on the exact configuration
+this project is developed on. Verifying the blob answered the wrong question;
+nobody had run `npm run poc` from a fresh checkout on this machine.
+
+A `.gitattributes` pinning `* text=auto eol=lf` overrides the reviewer's
+autocrlf setting for this repository, so the checkout is right whatever their
+machine is configured to do. Verified by running it: docker detected, Landlock
+probe failing over to `danger-full-access`, image and app built, serving with
+`codifyEnforcing: true` and the queue seeded at t=0.
+
 **Working tree hygiene.** `Hackathon Track 1.txt` (the brief) is deliberately
 untracked. Scratch harnesses belong in the scratchpad directory, never in
 `apps/server` — one was committed by mistake and removed in `c87931f`.
