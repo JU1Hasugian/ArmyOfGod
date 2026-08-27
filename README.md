@@ -25,7 +25,7 @@ persistent workspaces, Codex CLI on Volcengine Ark — is preserved and verified
 | **Design** | [`docs/CODIFY.md`](docs/CODIFY.md) — architecture, demo script, limitations |
 | **Measurement** | [`docs/SEMANTIC-ROUTING.md`](docs/SEMANTIC-ROUTING.md) — how the matcher was broken and fixed |
 | **Handover** | [`docs/ENGINEERING-LOG.md`](docs/ENGINEERING-LOG.md) — what was tried, measured, discarded |
-| **Verification** | `npm run check` — 265 tests, typecheck, both builds |
+| **Verification** | `npm run check` — 271 tests, typecheck, both builds |
 | **Diagram** | [One page](docs/assets/architecture.svg) — middleware, data flow, trust boundary, enforcement point |
 
 ### What it enforces, observed live

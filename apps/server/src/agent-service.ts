@@ -1082,6 +1082,11 @@ export class AgentService {
         // or when the reviewer withholds its approval.
         await this.codify.refreshCandidates();
         await this.codify.autoPromote((agent) => this.createAgent(agent));
+        // The same pass for corrections: several people asking for the same
+        // change rewrites the brief without waiting for an operator, behind a
+        // guard that only signs presentation changes.
+        await this.codify.refreshRefinements();
+        await this.codify.autoApplyRefinements();
         // The broker's own JSONL is the source of truth for what happened at
         // the boundary; the trace only gives those facts an ordering and a
         // parent, so a reviewer reads one sequence instead of two logs.

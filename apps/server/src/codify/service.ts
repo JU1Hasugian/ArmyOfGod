@@ -26,6 +26,7 @@ import {
 import {
   draftBrief,
   draftRule,
+  reviewRule,
   reviewScope,
   type BriefSample,
   type ObservedBehaviour,
@@ -1488,6 +1489,59 @@ export class CodifyService {
       }
       return structuredClone(database.refinementProposals);
     });
+  }
+
+  /**
+   * Apply the proposals a guard will sign, without waiting for a person.
+   *
+   * The argument is the one auto-promotion already makes, and it is stronger
+   * here than it looks. An operator who does not exist cannot approve anything,
+   * and a queue nobody empties is a feature that never fires - so the platform
+   * would learn what to do differently and then never do it. Refinement is also
+   * the *narrower* of the two decisions: promotion grants capability a task
+   * demonstrably used, while a refinement grants none at all. It changes how the
+   * output looks.
+   *
+   * The guard is tighter than the scope reviewer's, for a reason worth naming.
+   * `reviewScope` reads three lists of structured facts and a hostname has
+   * nowhere for an instruction to hide. A rule is *prose*, written by users, and
+   * applying it appends that prose to the system prompt of an agent that holds a
+   * capability scope. So `reviewRule` allows only presentation - wording, order,
+   * headings, detail - and sends anything touching what the agent reaches,
+   * reads, writes, runs or reveals to a human. It fails closed.
+   *
+   * A held proposal is never rejected. The human queue still exists; it just
+   * only ever contains what the guard would not sign.
+   */
+  async autoApplyRefinements(): Promise<{
+    applied: RefinementProposal[];
+    heldForReview: { id: string; reason: string }[];
+  }> {
+    const applied: RefinementProposal[] = [];
+    const heldForReview: { id: string; reason: string }[] = [];
+    if (!this.config.codifyAutoRefine) return { applied, heldForReview };
+
+    for (const proposal of this.listRefinements()) {
+      if (proposal.status !== "pending") continue;
+      const review = await reviewRule(this.config, proposal.proposedRule);
+      if (review.verdict !== "allow") {
+        heldForReview.push({ id: proposal.id, reason: review.reason });
+        continue;
+      }
+      try {
+        await this.applyRefinement(proposal.id, AUTO_PROMOTER);
+        await this.store.mutate((database) => {
+          const stored = database.refinementProposals.find((e) => e.id === proposal.id);
+          // What the guard said, so oversight after the fact has something to
+          // read. "Applied automatically" is not checkable.
+          if (stored) stored.reviewNote = review.reason;
+        });
+        applied.push(proposal);
+      } catch {
+        // Superseded mid-pass, or the contract went inactive. Left pending.
+      }
+    }
+    return { applied, heldForReview };
   }
 
   listRefinements(): RefinementProposal[] {

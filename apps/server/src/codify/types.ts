@@ -104,6 +104,14 @@ export interface RefinementProposal {
   distinctUsers: number;
   /** The instruction this would add to the brief. */
   proposedRule: string;
+  /**
+   * What the guard said, when the rule was applied without a person.
+   *
+   * Mirrors `TaskContract.reviewNote` and exists for the same reason:
+   * "applied automatically" is not something an operator can check, and the
+   * reasoning is. Absent on a proposal a human decided.
+   */
+  reviewNote?: string;
   status: "pending" | "applied" | "rejected";
   createdAt: string;
   updatedAt: string;

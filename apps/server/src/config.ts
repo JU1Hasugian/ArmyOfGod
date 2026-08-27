@@ -83,6 +83,16 @@ const envSchema = z.object({
    * Abstaining here means the ordinary fail-open path: run ad hoc, observe, and
    * let the run become evidence — never a wider scope.
    */
+  /**
+   * Sampling temperature for Codify's own model calls - brief drafting, the
+   * scope reviewer, rule drafting and the compound-request planner.
+   *
+   * Not the Agent's temperature: Codex is a separate process with its own
+   * sampling. These four are decisions rather than prose, and at the
+   * provider default two identical corpora produced briefs that differed in
+   * whether they pinned the output structure at all.
+   */
+  ARK_TEMPERATURE: z.coerce.number().min(0).max(2).default(0),
   CODIFY_TIE_MARGIN: z.coerce.number().min(0).max(1).default(0),
   /**
    * How a prompt joins an existing cluster. `seed` compares against the
@@ -143,6 +153,19 @@ const envSchema = z.object({
    * The one step that genuinely *widens* reach is handing a brand-new principal a
    * credential, and `CODIFY_AUTO_GRANT_SECRETS` keeps that human-gated.
    */
+  /**
+   * Whether a proposed rule may be applied without a person.
+   *
+   * On by default, for the reason auto-promotion is: an operator who does
+   * not exist cannot approve anything, and a queue nobody empties is a
+   * feature that never fires. Gated by `reviewRule`, which is stricter than
+   * the scope reviewer because a rule is user-written prose entering an
+   * agent's standing instructions rather than a structured fact.
+   */
+  CODIFY_AUTO_REFINE: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true"),
   CODIFY_AUTO_PROMOTE: z
     .enum(["true", "false"])
     .default("true")
@@ -255,6 +278,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     codifyBrokerImage: env.CODIFY_BROKER_IMAGE?.trim() || env.CONTAINER_RUNTIME_IMAGE,
     codifyMatchThreshold: env.CODIFY_MATCH_THRESHOLD,
     codifyContainmentThreshold: env.CODIFY_CONTAINMENT_THRESHOLD,
+    arkTemperature: env.ARK_TEMPERATURE,
     codifyTieMargin: env.CODIFY_TIE_MARGIN,
     codifyClusterLinkage: env.CODIFY_CLUSTER_LINKAGE,
     codifySemanticThreshold: env.CODIFY_SEMANTIC_THRESHOLD,
@@ -276,6 +300,7 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
         ? env.NODE_ENV !== "test"
         : env.CODIFY_LLM_DRAFTING === "true",
     codifyAutoPromote: env.CODIFY_AUTO_PROMOTE,
+    codifyAutoRefine: env.CODIFY_AUTO_REFINE,
     codifyAutoGrantSecrets: env.CODIFY_AUTO_GRANT_SECRETS,
     codifyDefaultUser: env.CODIFY_DEFAULT_USER,
     codifyOperators: env.CODIFY_OPERATORS.split(",")

@@ -26,8 +26,8 @@ answer, and least privilege arrives as a side effect.
 Read in this order: `README.md` → `docs/CODIFY.md` (design) →
 `docs/SEMANTIC-ROUTING.md` (all measurement).
 
-**Where things stand.** Ten mechanisms, all implemented and enforced; 265 tests
-across 32 files, of which 3 skip without live credentials; `npm run check` green
+**Where things stand.** Ten mechanisms, all implemented and enforced; 271 tests
+across 33 files, of which 3 skip without live credentials; `npm run check` green
 (typecheck + suite + both production builds). Every headline claim is measured
 against data the author did not write, and §9 lists what is not.
 
@@ -228,8 +228,9 @@ wrote is a floor on confidence, not a population estimate.
 
 ## 4. Tried, measured, and rejected
 
-Five principled ideas were validated against a measurement. Three were never
-built; two are built, tested and shipped **off** at their previous defaults.
+Six principled ideas were validated against a measurement. Three were never
+built; two are built, tested and shipped **off** at their previous defaults; one
+was built, kept, and does not do what it was reached for.
 Recording them matters: a threshold defended only by the sweep that produced it
 is a tuned constant; one that survived alternatives is a decision.
 
@@ -289,8 +290,37 @@ difference from before is that the alternative is now built and measured rather
 than hypothesised, and switching is one environment variable if a second corpus
 agrees.
 
-Both were shipped rather than deleted because the mechanism is the honest place
-to put a fix if the trade ever changes — a corpus where neighbours have *different*
+**Pinning the sampling temperature, to make promotion reproducible.** Codify's
+own model calls sent no `temperature`, so they ran at the provider default. Two
+clean stores promoting the *same* seeded corpus produced briefs that differed in
+whether they pinned the output structure at all — and on the store where the
+brief left headings to the Agent, the consistency result the platform exists to
+produce collapsed to three distinct structures across three governed runs.
+
+Temperature looked like the cause. It is not. Measured directly against the live
+endpoint, three identical `draftBrief` calls:
+
+| temperature | distinct briefs of 3 | lengths |
+|---|---|---|
+| 0 | **3** | 605, 482, 578 |
+| 1 | **3** | 402, 590, 597 |
+
+Hosted inference is not reproducible at temperature 0 — batching and kernel
+non-determinism see to that, and Ark exposes no seed. So promotion cannot be
+made repeatable this way, and the honest mitigation is the one in the demo
+runbook: read the drafted brief before filming, and re-seed if it does not name
+the structure.
+
+`ARK_TEMPERATURE` is kept at `0` anyway, because it is the right default for
+what these calls are. All four — brief drafting, the scope reviewer, rule
+drafting, the compound-request planner — are decisions rather than prose, and a
+reviewer that answers differently on identical facts is worse than one that
+answers wrongly but the same way, because only the second can be argued with.
+It narrows the spread; it does not close it, and this section exists so nobody
+later mistakes it for a reproducibility fix.
+
+Both switched-off mechanisms were shipped rather than deleted because the
+mechanism is the honest place to put a fix if the trade ever changes — a corpus where neighbours have *different*
 footprints would invert it — and because a knob at its default is cheaper to
 justify than a rediscovery. Four tests cover it, including the one that matters:
 a tie on a specialist still binds to that specialist's own scope, so declining
@@ -493,7 +523,7 @@ boundary that is not applied.
 
 | test | proves | how to run |
 |---|---|---|
-| `npm run check` | 265 tests, typecheck, both builds | `npm run check` |
+| `npm run check` | 271 tests, typecheck, both builds | `npm run check` |
 | `semantic.live.test.ts` | recognition against a real Ark endpoint | `ARK_API_KEY` + `ARK_EMBED_MODEL`; see §10 |
 | `planner.live.test.ts` | **8/8 split, 8/8 both halves, 8/8 ordering, 0/8 false splits** over four runs | `ARK_API_KEY` + `ARK_MODEL`; see §10 |
 | live-demo (49 checks) | the policy **binds** — real Docker, real Codex, derived scope enforced, `ab.chatgpt.com` refused, budget 429, trace, two specialists never sharing a scope | scratch harness, needs a container engine |

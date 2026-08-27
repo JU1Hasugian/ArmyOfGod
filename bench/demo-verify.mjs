@@ -201,7 +201,15 @@ async function iteration(n) {
     const over = await api("/api/agents/" + general + "/messages",
       { method: "POST", body: JSON.stringify({ content: GOVERNED[0][1] }) }, "user-f");
     mark("4.2 429 at admission", over.status === 429, "status " + over.status);
-    await api(`/api/codify/contracts/${target.id}`, { method: "PATCH", body: JSON.stringify({ budget: null }) }, "operator");
+    // Revising a contract supersedes it: the result is a NEW contract with a new
+    // id, and the one just patched is deprecated. Restoring against the old id
+    // silently leaves the live contract capped, which starves every governed
+    // run that follows - including the refinement beat below.
+    const live = ((await api("/api/codify/contracts")).body.contracts ?? [])
+      .find((c) => c.status === "active" && c.budget?.maxTotalTokens);
+    if (live) {
+      await api(`/api/codify/contracts/${live.id}`, { method: "PATCH", body: JSON.stringify({ budget: null }) }, "operator");
+    }
   }
 
   // Part 5b — learned improvements. Two people give the specialist the same
@@ -213,9 +221,17 @@ async function iteration(n) {
       await turn(general, user, CORRECTION, false);
     }
     const { body: props } = await api("/api/codify/refinements/refresh", { method: "POST", body: "{}" }, "operator");
-    const proposals = (props.refinements ?? props ?? []).filter((r) => r.status === "pending");
-    mark("5b a correction from two people becomes a proposal", proposals.length > 0,
-      proposals[0]?.proposedRule?.slice(0, 70) ?? "none raised");
+    const all = props.refinements ?? props ?? [];
+    // With auto-refine on, a rule the guard signs is already applied by the time
+    // this reads the list - so "raised" means raised at all, not still pending.
+    mark("5b a correction from two people becomes a rule", all.length > 0,
+      all.map((r) => r.status + ": " + (r.proposedRule ?? "").slice(0, 44)).join(" | ") || "none raised");
+    const auto = all.filter((r) => r.status === "applied");
+    if (all.length > 0) {
+      mark("5b the guard decided it without an operator", auto.length > 0 || all.some((r) => r.status === "pending"),
+        auto.length > 0 ? "applied: " + (auto[0].reviewNote ?? "").slice(0, 60) : "held for a human, which is the closed state");
+    }
+    const proposals = all.filter((r) => r.status === "pending");
 
     if (proposals[0]) {
       const before = (await api("/api/codify/contracts")).body.contracts ?? [];

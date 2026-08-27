@@ -384,6 +384,41 @@ and effective*, not that a person approves every action.
 something to read. "Promoted automatically" is not checkable; the reviewer's
 actual reasoning is.
 
+### Why refinement is automatic too, and why its guard is tighter
+
+Promotion does not wait for a person because it *narrows*. The same argument
+applies to a refinement more strongly, not less: a rule grants no capability at
+all — it changes how the output looks. And an operator who does not exist cannot
+approve anything, so a queue nobody empties is a mechanism that learns what to do
+differently and then never does it.
+
+What differs is the guard, and the difference is the whole reason there are two.
+
+`reviewScope` reads a task name and three lists of structured facts. That
+constraint is what makes it trustworthy: the observations behind those facts are
+written by users, and **a hostname has nowhere for an instruction to hide.**
+
+A rule is not a fact. It is **prose, written by users**, and applying it appends
+that prose to the system prompt of an agent that holds a capability scope. Auto
+-applying it without a guard would be a prompt-injection path with a two-person
+price. So `reviewRule` is deliberately narrow:
+
+- A **structural filter runs before any model is asked** — a rule naming a host,
+  a path, a command, a credential, an environment variable, or telling the agent
+  to disregard its brief is refused outright, with no model in the loop to be
+  talked around.
+- Only then a model call, which may allow **presentation** and nothing else:
+  wording, ordering, headings, length, level of detail, what to include or omit.
+- Anything touching what the agent *reaches, reads, writes, runs or reveals* is
+  not a formatting preference however politely it is phrased, and goes to a
+  human.
+- Unreachable means **review**, never allow.
+
+A held proposal is never rejected, exactly as with promotion. The human queue
+still exists; it only ever contains what the guard would not sign. And
+`RefinementProposal.reviewNote` records what the guard said, because "applied
+automatically" is not something an operator can check and the reasoning is.
+
 ### Splitting narrows; it never widens
 
 The obvious way to serve "pull the numbers and email them to the board" is one
@@ -452,7 +487,7 @@ type TaskBudget = {
 | `RouteDecision` | `routed` / `principal_bound` / `unmatched` / `user_override`, with the winning channel, all three scores, and a reason |
 | `DenialEvent` | Something blocked at the boundary — `egress`, `path`, `secret` or `budget` — with a redacted target |
 | `FeedbackObservation` | A follow-up correction, attributed to the contract it is about |
-| `RefinementProposal` | A clustered correction and the rule it proposes |
+| `RefinementProposal` | A clustered correction, the rule it proposes, and — when applied without a person — what the guard said |
 | `BrokerEvent` | One line of the broker's append-only JSONL evidence |
 | `TraceSpan` | One node of a Run's trace: `traceId`, `parentId`, category, status, duration |
 | `CoordinationSession` | A shared session, its participants, its turn history and its shared state |
@@ -525,6 +560,7 @@ Every setting has a working default; `npm run poc` needs none of them.
 | `CODIFY_MATCH_THRESHOLD` | `0.65` | Lexical fingerprint (Jaccard) threshold. Measured, not guessed — see §9. |
 | `CODIFY_CONTAINMENT_THRESHOLD` | `0.6` | Containment threshold. The channel that makes routing padding-proof. `0` disables it. |
 | `CODIFY_SEMANTIC_THRESHOLD` | `0.7` | Cosine threshold for the embedding channel. Inert without `ARK_EMBED_MODEL`. |
+| `CODIFY_AUTO_REFINE` | `true` | Whether a drafted rule may be applied without a person, gated by `reviewRule`. Off ⇒ every rule waits in the queue. |
 | `CODIFY_CLUSTER_LINKAGE` | `seed` | How a prompt joins a cluster. `complete` asks every member, not just the anchor: 88% pure clusters instead of 43%, at the cost of coverage. Measured, shipped off — routing doc §4e. |
 | `CODIFY_TIE_MARGIN` | `0` | How far ahead the winner must be before routing commits. `0` is take-the-best. Measured and shipped off — see the engineering log §4. |
 | `CODIFY_SEMANTIC` | on, off under test | Master switch for the embedding channel. |
@@ -675,7 +711,7 @@ tests. State one limitation from §11.
 ## 9. Tests
 
 `npm run check` runs typecheck, the full vitest suite, and both production
-builds. **265 tests across 32 files** (three skipped without live credentials;
+builds. **271 tests across 33 files** (three skipped without live credentials;
 a fourth, the host-process runner's shell-script stand-in, skips on Windows).
 
 | Area | What it proves |
@@ -1199,6 +1235,83 @@ contract's* output. It self-heals on that person's next request.
 
 ---
 
+## 11d. Three things measured, designed, and deliberately not built
+
+Each of these closes a limitation §11 names. None was built, and the reason is
+the same in all three cases: the submission already carries eleven mechanisms,
+the brief says twice that breadth is not the goal, and every part of this system
+that was "finished" turned out to have a defect that only appeared when somebody
+ran it. Recording the design is worth more here than shipping a twelfth thing
+nobody has stress-tested.
+
+### A rejection signal — the loop cannot learn that it was wrong
+
+Routing has a feedback channel for *"the output should look different"* — the
+refinement loop. It has none for **"you should not have routed this here."**
+That is the gap behind the numbers in `docs/SEMANTIC-ROUTING.md` §4e: 10.6%
+genuine misrouting and 110 of 160 correct routes landing on a contract briefed
+for a sibling task as well as its own. The platform can measure both and cannot
+be told about either.
+
+The design: a **"that is not what I wanted — run it my way"** action on a
+governed reply. One click re-runs with `forceAdHoc`, and records the rejection
+against the contract that was matched. Rejections then cluster exactly as
+corrections do, under the same distinct-user floor. Several people rejecting the
+same routing is direct evidence that a contract over-matches — the one signal
+the matcher currently cannot receive.
+
+The ad-hoc result stays **observed**, because it is real work and real evidence,
+but carries that the specialist was declined. Detection still learns from it; it
+does not pretend the specialist produced it.
+
+### Running both arms, and why the safe version is still not free
+
+The obvious version — run governed and ad hoc for every turn and let the person
+choose — inverts the property the platform exists for. The ad-hoc arm is the
+*ungoverned* one, so the unbounded path would execute on 100% of turns instead
+of none of them.
+
+There is a safe version, and it is two lines: run both **on the specialist**.
+`forceAdHoc` there does not drop the scope, only the brief — see
+`principal_bound` in §3 — so the choice becomes *briefed vs unbriefed, both
+bounded by the same contract*. It is a cleaner experiment than the one in the
+engineering log §9, because it controls for permissions instead of varying them.
+
+It still doubles tokens, containers and latency on every turn, to serve a case
+that is wrong about one time in ten. The rejection signal above buys the same
+information at a tenth of the cost.
+
+### An LLM as tie-breaker, not as matcher
+
+A model would almost certainly separate *"make a bar chart of total visits"*
+from *"alert if visits exceed a threshold"*, which is exactly what cosine cannot
+do. Using one as **the** matcher is still wrong, for three reasons and the first
+is decisive:
+
+- **It puts attacker-controlled prose in charge of selecting a capability
+  scope.** Every other model call in this design is kept away from prompt text
+  precisely so it cannot be argued with — §4 makes that case for `reviewScope`
+  and §11d's own guard makes it again for `reviewRule`. A matcher reading prose
+  to choose a policy reopens that door on the request path.
+- **It is a model call on every turn.** The planner is deliberately the only one
+  there, and only for prompts carrying a compound signature. Universal matching
+  costs latency and money per prompt, and leaves the platform unable to route at
+  all when the endpoint is down; the lexical channels work offline.
+- **It would not be stable.** Measured against this endpoint, three identical
+  drafting calls at temperature 0 produced three different briefs. A routing
+  decision that varies between identical prompts is worse than a wrong one that
+  does not, which is the same argument that sank `CODIFY_TIE_MARGIN`.
+
+The version worth building uses the model **only on a near tie** — when the top
+two contracts score within a margin, which is roughly one turn in ten and is
+already detected by the tie-margin machinery in `route()`. It reads prose only
+to choose between two contracts *already derived from behaviour*, never to grant
+capability; it fails closed to today's behaviour when unreachable; and it turns
+a measured 3:1 losing trade into a plausible win. The groundwork is committed
+and unused, which is the cheapest possible state for an idea that is not ready.
+
+---
+
 ## 12. Corrections made to the original design
 
 The design this implements was revised in five places, each after measurement.
@@ -1236,7 +1349,7 @@ test asserting the production-mode error shape.
 |---|---|---|
 | End-to-end middleware behavior | 40% | Routing changes **which Agent and which brief** executes a turn, on three channels that fail in different directions. Enforcement executes at container launch and at the broker, on a network the Agent cannot route around, and a promoted specialist carries its scope even when nothing matches. Budget refuses at admission before a Run exists. All verified against live Ark and real Docker (§10, `docs/SEMANTIC-ROUTING.md` §4–4b). |
 | Technical design and integration | 25% | Reuses `AgentService` and `AgentRunner`; enforcement lives in `ContainerCodexRunner` only. Ten additive record types with backfill, so an older store still loads, and a contract promoted before the semantic channel existed still matches on its fingerprints. `CapabilityScope`, `TaskBudget` and `TaskContract` are the extensible contracts. Coordination adds no execution path of its own — a session turn goes through the ordinary `sendMessage` seam, which is what makes "each participant under its own scope" true rather than aspirational. |
-| Verification and robustness | 20% | 265 tests, including a cooperation-independent network test, credential isolation, fail-closed, forged-scope, delegation fallback, the padding evasion, channel complementarity, principal binding, budget lineage, trace crash-closure, and the coordination turn claim. Redaction before storage; deterministic fallbacks for every model call; bounded retry so a rate limit cannot silently become a policy decision; per-run cleanup. |
+| Verification and robustness | 20% | 271 tests, including a cooperation-independent network test, credential isolation, fail-closed, forged-scope, delegation fallback, the padding evasion, channel complementarity, principal binding, budget lineage, trace crash-closure, and the coordination turn claim. Redaction before storage; deterministic fallbacks for every model call; bounded retry so a rate limit cannot silently become a policy decision; per-run cleanup. |
 | Demo and reproducibility | 15% | One-command startup preserved; seeded corpus makes the flow reproducible at t=0; the live-endpoint test skips cleanly without credentials so `npm run check` is green either way; limitations documented; no hidden manual setup. |
 
 ### Optional-evidence checkboxes

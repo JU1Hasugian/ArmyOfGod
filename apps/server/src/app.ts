@@ -439,7 +439,13 @@ export async function createApp(
   }));
 
   app.post("/api/codify/refinements/refresh", async () => ({
-    refinements: await service.codify.refreshRefinements(),
+    refinements: await (async () => {
+      // Detection then decision, in one pass: a proposal the guard will sign
+      // is applied here rather than waiting for somebody to open this page.
+      await service.codify.refreshRefinements();
+      await service.codify.autoApplyRefinements();
+      return service.codify.listRefinements();
+    })(),
   }));
 
   app.post("/api/codify/refinements/:id/apply", async (request) => {
