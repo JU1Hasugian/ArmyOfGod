@@ -26,8 +26,8 @@ answer, and least privilege arrives as a side effect.
 Read in this order: `README.md` → `docs/CODIFY.md` (design) →
 `docs/SEMANTIC-ROUTING.md` (all measurement).
 
-**Where things stand.** Ten mechanisms, all implemented and enforced; 246 tests
-across 31 files, of which 3 skip without live credentials; `npm run check` green
+**Where things stand.** Ten mechanisms, all implemented and enforced; 265 tests
+across 32 files, of which 3 skip without live credentials; `npm run check` green
 (typecheck + suite + both production builds). Every headline claim is measured
 against data the author did not write, and §9 lists what is not.
 
@@ -228,7 +228,8 @@ wrote is a floor on confidence, not a population estimate.
 
 ## 4. Tried, measured, and rejected
 
-Three principled ideas were validated **before** being built and none shipped.
+Five principled ideas were validated against a measurement. Three were never
+built; two are built, tested and shipped **off** at their previous defaults.
 Recording them matters: a threshold defended only by the sweep that produced it
 is a tuned constant; one that survived alternatives is a decision.
 
@@ -248,6 +249,52 @@ stream. **No drift** — worst centroid movement 0.013, purity 100%, contagion 0
 but also **no benefit**: identical coverage, identical accuracy, zero extra
 prompts matched. Safe and pointless on this data, because carryover is already
 100%.
+
+**Abstaining on a near tie** (`CODIFY_TIE_MARGIN`) — built, tested, and shipped
+at `0`, which is the previous behaviour. WorkBench (§4e of the routing doc)
+showed the adjacent-family failure is two contracts scoring almost the same
+rather than one scoring low, and a margin acts only on that ambiguous pair
+instead of losing whole families the way a stricter threshold does. It works,
+and it does not pay:
+
+| margin | routed correctly | misrouted | unmatched |
+|---|---|---|---|
+| 0 (shipped) | 161 | 18 (10.1%) | 97 |
+| 0.05 | 152 | 15 (9.0%) | 109 |
+| 0.12 | 133 | 11 (7.6%) | 132 |
+
+**About three correct routes given up for every misroute prevented.** Better
+than raising the semantic threshold, which costs five — but every abstention is
+an ungoverned ad-hoc run with an unrestricted network, while a misroute is a
+wrong brief *inside a contract's scope*. On this corpus the wrong contract is
+almost always a neighbour with the same footprint, so trading a contained
+mistake for an uncontained one is the wrong direction.
+
+**Complete linkage** (`CODIFY_CLUSTER_LINKAGE`) — the one that actually moves
+the number, and still shipped off. Seed linkage stopped chaining but cannot
+split a family whose anchor sits between two neighbours; complete linkage asks
+every member. On WorkBench: pure clusters **43% → 88%**, merged clusters 17 → 3,
+blended briefs **114 → 18**, and contracts wider than observed 2/30 → 1/24.
+
+Counted properly — correct *and* not blended with a sibling — it is **50 → 82,
+64% more runs getting a brief written for their actual task.** The cost is
+coverage: purer clusters are smaller, smaller clusters miss the five-occurrence
+floor, so 24 contracts cover 69 families where seed linkage managed 30, and
+unmatched rises 97 → 149.
+
+Left at `seed` because this is one corpus and one run, and candidate counts
+already move by one between runs on embedding variance alone. Flipping a default
+on a single benchmark is the tuned constant this section exists to avoid. The
+difference from before is that the alternative is now built and measured rather
+than hypothesised, and switching is one environment variable if a second corpus
+agrees.
+
+Both were shipped rather than deleted because the mechanism is the honest place
+to put a fix if the trade ever changes — a corpus where neighbours have *different*
+footprints would invert it — and because a knob at its default is cheaper to
+justify than a rediscovery. Four tests cover it, including the one that matters:
+a tie on a specialist still binds to that specialist's own scope, so declining
+to choose can never become a way out of enforcement.
 
 ---
 
@@ -446,7 +493,7 @@ boundary that is not applied.
 
 | test | proves | how to run |
 |---|---|---|
-| `npm run check` | 246 tests, typecheck, both builds | `npm run check` |
+| `npm run check` | 265 tests, typecheck, both builds | `npm run check` |
 | `semantic.live.test.ts` | recognition against a real Ark endpoint | `ARK_API_KEY` + `ARK_EMBED_MODEL`; see §10 |
 | `planner.live.test.ts` | **8/8 split, 8/8 both halves, 8/8 ordering, 0/8 false splits** over four runs | `ARK_API_KEY` + `ARK_MODEL`; see §10 |
 | live-demo (49 checks) | the policy **binds** — real Docker, real Codex, derived scope enforced, `ab.chatgpt.com` refused, budget 429, trace, two specialists never sharing a scope | scratch harness, needs a container engine |

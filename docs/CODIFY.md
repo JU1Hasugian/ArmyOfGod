@@ -472,10 +472,11 @@ contract a human already signed off.
 
 | Seam | Change |
 |---|---|
-| `app.ts` | Mock principal header, `forceAdHoc`, 22 Codify routes. A scope in the request body is **not in the schema** and is stripped. |
+| `app.ts` | Mock principal header, `forceAdHoc`, 22 Codify routes, a read-only workspace listing and file read, and a per-principal session reset. A scope in the request body is **not in the schema** and is stripped. |
 | `agent-service.ts` | Redaction gate before persistence; routing; budget admission; delegation; feedback capture; trace spans; session turns; evidence collection on success *and* failure. |
 | `container-codex-runner.ts` | Scoped launch: internal network, `ro` workspace + `rw` scope paths, per-Agent Codex home, name-only secrets. |
 | `types.ts`, `store.ts` | Ten additive record types with backfill on load. |
+| `workspace.ts` | One workspace per principal per Agent, seeded on first run; a read-only listing and file read for the browser. |
 | `config.ts` | Codify settings, the two new match thresholds, `ARK_EMBED_MODEL`, managed-secret pool, per-Agent Codex home, broker base URL. |
 | `store.ts` | Bounded retry around the atomic `rename`, so a transient `EPERM` on the store write no longer fails a run. |
 | `codify/*` | Redaction, fingerprinting, **semantic matching**, scope derivation, **budget**, **trace**, **coordination**, **compound-request planning**, broker lifecycle, Ark client, service, seed corpus. |
@@ -493,23 +494,24 @@ In the Starter Kit's own vocabulary (`docs/ARCHITECTURE.md`), Codify spans the
 
 | Component | Lines |
 |---|---|
-| `codify/service.ts` | 1,692 |
+| `codify/service.ts` | 1,925 |
+| `Governance.tsx` | 1,006 |
 | `codify/coordination.ts` | 452 |
 | `codify/semantic.ts` | 450 |
 | `codify/types.ts` | 321 |
+| `codify/ark-client.ts` | 298 |
 | `codify/broker-session.ts` | 297 |
 | `broker/codify-broker.mjs` | 265 |
-| `codify/ark-client.ts` | 249 |
-| `codify/trace.ts` | 212 |
-| `codify/scope.ts` | 207 |
+| `codify/trace.ts` | 240 |
+| `codify/scope.ts` | 228 |
+| `codify/workspace-diff.ts` | 199 |
+| `codify/planner.ts` | 190 |
 | `codify/budget.ts` | 184 |
-| `codify/planner.ts` | 178 |
 | `codify/fingerprint.ts` | 174 |
 | `codify/seed.ts` | 163 |
-| `codify/workspace-diff.ts` | 107 |
+| `codify/continuity.ts` | 95 |
 | `codify/redaction.ts` | 88 |
-| `Governance.tsx` | 923 |
-| Codify test suites (21 files) | 4,797 |
+| Codify test suites (25 files) | 5,213 |
 
 ---
 
@@ -523,6 +525,8 @@ Every setting has a working default; `npm run poc` needs none of them.
 | `CODIFY_MATCH_THRESHOLD` | `0.65` | Lexical fingerprint (Jaccard) threshold. Measured, not guessed — see §9. |
 | `CODIFY_CONTAINMENT_THRESHOLD` | `0.6` | Containment threshold. The channel that makes routing padding-proof. `0` disables it. |
 | `CODIFY_SEMANTIC_THRESHOLD` | `0.7` | Cosine threshold for the embedding channel. Inert without `ARK_EMBED_MODEL`. |
+| `CODIFY_CLUSTER_LINKAGE` | `seed` | How a prompt joins a cluster. `complete` asks every member, not just the anchor: 88% pure clusters instead of 43%, at the cost of coverage. Measured, shipped off — routing doc §4e. |
+| `CODIFY_TIE_MARGIN` | `0` | How far ahead the winner must be before routing commits. `0` is take-the-best. Measured and shipped off — see the engineering log §4. |
 | `CODIFY_SEMANTIC` | on, off under test | Master switch for the embedding channel. |
 | `ARK_EMBED_MODEL` | — | Ark embedding endpoint ID. Must be activated in the Ark console. |
 | `CODIFY_MIN_OCCURRENCES` | `5` | Runs before a cluster can be promoted. |
@@ -559,6 +563,10 @@ GET    /api/codify/sessions/:id                   POST /api/codify/sessions/:id/
 ---
 
 ## 8. Demo script (three minutes)
+
+> The rehearsable version — pre-flight, beat timings, ranked evidence, and
+> what to do when a beat does not fire — is [`docs/DEMO.md`](DEMO.md). This
+> section is the narrative behind it.
 
 Run `npm run poc`. The store seeds an observed-run corpus on first boot, so the
 review queue is populated immediately. The startup script probes for Landlock
@@ -667,7 +675,8 @@ tests. State one limitation from §11.
 ## 9. Tests
 
 `npm run check` runs typecheck, the full vitest suite, and both production
-builds. **246 tests across 31 files** (three skipped without live credentials).
+builds. **265 tests across 32 files** (three skipped without live credentials;
+a fourth, the host-process runner's shell-script stand-in, skips on Windows).
 
 | Area | What it proves |
 |---|---|
@@ -887,12 +896,18 @@ and the one-off work left alone.
   the *principal* rather than to the classification, so a promoted specialist
   runs under its contract's scope whichever prompt it is handed. `route()` still
   ignores `agentId`; that change is **not implemented**.
-- **Within-family over-matching.** On 325 adversarially generated near-miss
-  probes — an adjacent job phrased in a governed task's own vocabulary — the
-  router matches about half at the default threshold. Cross-contract error is
-  zero, so the cost is a wrong brief inside a narrower-than-ungoverned scope, not
-  a containment failure. Measured only once the benchmark stopped being written
-  by the same person who wrote the matcher; see `docs/SEMANTIC-ROUTING.md` §4c.
+- **Adjacent tasks get a blended brief.** On 325 adversarially generated
+  near-miss probes the router matches about half at the default threshold. On
+  WorkBench — 690 tasks in 69 ground-truth families that are *neighbours* by
+  construction — 16 of 29 clusters merge two or more families, and **110 of 160
+  correctly-routed probes land on a contract briefed for a sibling task too**.
+  Genuine misrouting is **10.6%**, and containment holds: **1 of 29** contracts
+  ended up with capability its family never used. The cost is the brief, not the
+  boundary — measured, not argued, in `docs/SEMANTIC-ROUTING.md` §4e.
+  A stricter threshold does not fix it: across 0.72→0.86 the pure/merged ratio
+  moves 45%→47% while detected families fall from 29 to 17. What would help is
+  abstaining on a near-tie and sub-clustering before promotion; neither is
+  implemented.
 - **Word order is not handled.** On PAWS — pairs built to share vocabulary while
   differing in meaning — the semantic channel scores AUC 0.743 against MinHash's
   0.741, i.e. no better. A swapped-argument prompt does still land on a contract
@@ -966,13 +981,32 @@ and the one-off work left alone.
   transmit is a dead end — but a task that may read more than its scope names is
   the honest description.
 - **Data provisioning is out of scope; the mock resource set stands in for it.**
-  There is no upload path, by choice. Bytes reach a workspace one of two ways,
+  The workspace is *readable* from the browser — a listing and a file view, so a
+  reviewer can compare the artefact a run produced rather than the sentence it
+  wrote about one, and can see for themselves that a refused write left the
+  directory alone. There is no *upload* path, by choice. Bytes reach a workspace one of two ways,
   and Codify governs one of them: a task that *fetches* its own inputs is bound
   by its contract's domain allowlist at the broker, while a task whose inputs
   are *staged* for it — a mount, a sync, an upload — depends on plumbing that
   belongs to a deployment rather than to middleware. The finance, repo and
   incident fixtures are that staging, made reproducible. What Codify governs is
   the boundary itself: what may cross it, and what a task may do inside it.
+- **Everyone brings their own file, and that is fine; everyone choosing their
+  own *directory* is not.** In a real workplace nobody summarises the same
+  spreadsheet — five people have five CSVs — so a frequency floor applied to
+  filenames would clear nothing and derive a contract with no readable path.
+  It survives because the floor is applied to the containing **directory**:
+  `finance/alice-q1.csv` and `finance/bob-q1.csv` both become `finance` before
+  anything is counted, and the contract gets `finance` read and `out` write.
+  Both halves are asserted in `scope.test.ts` rather than argued for here.
+
+  **This is the real reason there is no upload path**, and it is a stronger
+  reason than scope. An upload that let a user choose *where* the file lands
+  reintroduces exactly the divergence the collapsing exists to absorb: five
+  people picking `finance/`, `data/`, `uploads/alice/` produce five directories,
+  none clears the floor, and the derived scope is empty. Done naively, an
+  ingress makes the middleware measurably worse. If one is ever added, the
+  platform must choose the directory and the user only the filename.
 - **Paths that diverge across a task family narrow the derived scope towards
   nothing.** Matching is path-insensitive — canonicalisation collapses every
   path to `{PATH}`, which is why twelve wordings of one task cluster. Scope
@@ -985,6 +1019,15 @@ and the one-off work left alone.
   requires a recorded denial — but it fails. A single per-Agent workspace makes
   this rare in practice, because the platform, not the user, decides where the
   data sits.
+- **Multi-tenancy stops at the workspace boundary.** Workspaces are per
+  principal per Agent (`workspaces/<agentId>/<userId>/`), seeded on that
+  person's first run, so two people routed to the same specialist neither read
+  nor overwrite each other's files. What is *not* isolated is everything a task
+  reaches beyond the workspace: two principals share the contract, its egress
+  allowlist and its credentials, so a host one person's runs justified is a host
+  the other can reach. Codify governs what an Agent may reach; which rows a data
+  system returns for a given caller is that system's job, through an identity
+  this platform does not yet authenticate (below, and §11a).
 - **Identity is asserted, not authenticated.** The principal comes from an
   `x-codify-user` header (`app.ts`), and the Starter Kit's bearer token is one
   shared secret rather than a user identity. This is the mock identity model the
@@ -1000,6 +1043,66 @@ and the one-off work left alone.
   stay open on purpose: an audit trail only the auditor can see is worth much
   less. The residual limitation is the one above — the principal the check reads
   is asserted rather than authenticated.
+
+---
+
+## 11a. What shape of platform this is, and where the data comes from
+
+A question that arrives early and deserves a direct answer: there is no file
+upload, so how does a real team's data reach a workspace?
+
+**Because this is not a chat assistant.** The Starter Kit's own description is
+*"let Codex CLI write files and run commands inside the selected Agent
+workspace"* — an agent that runs real commands over a corpus, not a
+conversation that files are dragged into. Enterprise assistants come in three
+shapes and only one of them uploads:
+
+| shape | how data arrives | examples |
+|---|---|---|
+| chat assistant | uploaded into the conversation | ChatGPT Enterprise, Claude for Work |
+| connector assistant | indexed from Drive or SharePoint, identity-scoped | M365 Copilot, Glean |
+| **agent over a workspace** | **repo cloned, share mounted** | Cursor, Devin — and this |
+
+M365 Copilot is the useful comparison: the most widely deployed enterprise
+assistant there is, and it has no upload flow at all. You ask about the Q1 deck
+and it retrieves from your Graph-permissioned content. Access control is the
+existing SharePoint ACL, not a filesystem.
+
+So bytes reach a workspace two ways, and Codify governs one of them:
+
+- **The task fetches them** — a warehouse, an internal API, a data lake. This is
+  governed: the contract's domain allowlist bounds it at the broker, and the
+  office run derived exactly this shape (`warehouse.internal`) without being
+  told to.
+- **A deployment stages them** — a read-only mount of the finance share, a sync
+  job. Infrastructure plumbing, deliberately outside the middleware.
+
+The fixtures stand in for the second: `finance/`, `repo/`, `incidents/` are
+*mounted enterprise data made reproducible*, not sample uploads.
+
+### Why the workspace shape is the one this thesis needs
+
+Not an accident of the Starter Kit. **Codify learns from repetition across
+several people, and chat is overwhelmingly one-off.** The office run measured
+it: **0 of 788** one-off engineering requests routed anywhere, while twelve
+recurring families promoted. Nobody uploads the same spreadsheet five times from
+three accounts and asks the same question.
+
+The work that does recur across people is the work that produces artefacts over
+a shared corpus — release notes every release, a postmortem every incident, a
+dependency audit every sprint, a report every month. Recurring, multi-person,
+artefact-producing, touching a bounded set of systems. That is a workspace
+shape, and it is the shape in which "repetition in, policy out" is true.
+
+### Per-user data is an identity question, not a filesystem one
+
+If Alice and Bob should see different finance rows, in a real system they do not
+have different *files* — they call the same API with different identities and it
+returns their department's rows. **Codify governs reach; the data system governs
+rows.** Those are different controls at different layers, and it is correct that
+this one does not attempt the second. It resolves through the same gap §11 names
+under identity: wire the principal to an IdP and per-user data falls out of the
+data system.
 
 ---
 
@@ -1021,6 +1124,21 @@ before the field existed has none and stays visible, the same concession
 `resumeThread` already makes for a pre-existing shared thread. The negative case
 — neither principal's turn appearing in the other's view — is asserted in
 `agent-service.test.ts` rather than argued for.
+
+**Workspaces are per principal.** `workspacePathFor(agentId, userId)` gives each
+person their own directory under the Agent, created and seeded the first time
+they run. A promoted specialist is one Agent everybody routes to, so an
+Agent-wide workspace was both a cross-user read and a collision — the second
+person's run overwrote the first person's output. The transcript and the Codex
+thread were keyed by principal for exactly that reason; this is the same fix for
+the third shared thing, and it is asserted rather than argued: one principal's
+file is absent from another's listing and unreadable through their path.
+
+Derivation is untouched, which is the part worth stating. Observations record
+paths **workspace-relative**, so Alice's `finance/q1.csv` and Bob's
+`finance/q1.csv` are both recorded as `finance/q1.csv` and still collapse to
+`finance` under the frequency floor. Splitting the root does not split the
+evidence — there is a test that pins exactly that.
 
 **Detection is seeded; the workspaces were not.** The observed-run corpus
 populates the review queue at t=0, but a promoted specialist got an empty
@@ -1118,7 +1236,7 @@ test asserting the production-mode error shape.
 |---|---|---|
 | End-to-end middleware behavior | 40% | Routing changes **which Agent and which brief** executes a turn, on three channels that fail in different directions. Enforcement executes at container launch and at the broker, on a network the Agent cannot route around, and a promoted specialist carries its scope even when nothing matches. Budget refuses at admission before a Run exists. All verified against live Ark and real Docker (§10, `docs/SEMANTIC-ROUTING.md` §4–4b). |
 | Technical design and integration | 25% | Reuses `AgentService` and `AgentRunner`; enforcement lives in `ContainerCodexRunner` only. Ten additive record types with backfill, so an older store still loads, and a contract promoted before the semantic channel existed still matches on its fingerprints. `CapabilityScope`, `TaskBudget` and `TaskContract` are the extensible contracts. Coordination adds no execution path of its own — a session turn goes through the ordinary `sendMessage` seam, which is what makes "each participant under its own scope" true rather than aspirational. |
-| Verification and robustness | 20% | 246 tests, including a cooperation-independent network test, credential isolation, fail-closed, forged-scope, delegation fallback, the padding evasion, channel complementarity, principal binding, budget lineage, trace crash-closure, and the coordination turn claim. Redaction before storage; deterministic fallbacks for every model call; bounded retry so a rate limit cannot silently become a policy decision; per-run cleanup. |
+| Verification and robustness | 20% | 265 tests, including a cooperation-independent network test, credential isolation, fail-closed, forged-scope, delegation fallback, the padding evasion, channel complementarity, principal binding, budget lineage, trace crash-closure, and the coordination turn claim. Redaction before storage; deterministic fallbacks for every model call; bounded retry so a rate limit cannot silently become a policy decision; per-run cleanup. |
 | Demo and reproducibility | 15% | One-command startup preserved; seeded corpus makes the flow reproducible at t=0; the live-endpoint test skips cleanly without credentials so `npm run check` is green either way; limitations documented; no hidden manual setup. |
 
 ### Optional-evidence checkboxes

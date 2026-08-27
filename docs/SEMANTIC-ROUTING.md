@@ -706,6 +706,147 @@ turn, and a request the user never made.
 
 ---
 
+## 4e. WorkBench: 69 adjacent families, and what the error actually is
+
+§4c measures 36 tasks that are easy to tell apart. Real granularity is finer,
+and the interesting question is what happens when families are *neighbours*.
+
+[WorkBench](https://github.com/olly-styles/WorkBench) is a workplace-agent
+benchmark: **690 tasks in 69 ground-truth families of exactly ten**, across five
+office domains, with a `base_template` column giving family membership and a
+`domains` column giving each task's capability footprint. Nobody here wrote any
+of it. Twelve families are analytics, eleven calendar, nine email — adjacent by
+construction, which is exactly what §4c could not test.
+
+Six instances per family were observed (round-robin over three principals, so
+each clears the distinct-user floor), each carrying the capability footprint of
+its true domains. Four were held out and routed.
+
+    npm run bench:workbench      # after: git clone --depth 1 https://github.com/olly-styles/WorkBench.git
+
+| | |
+|---|---|
+| families in / candidates out | **69 → 29** |
+| pure clusters (one family) | 13 / 29 |
+| **merged** (two or more families) | **16 / 29** |
+| held-out probes | 276 |
+| routed to a contract derived from their own family | **160** |
+| **routed to a contract that was not** | **19** — 10.6% of governed |
+| unmatched (fails open) | 97 |
+| of the correct ones, on a **blended** contract | **110** |
+| **contracts holding capability their family never used** | **1 / 29** |
+
+### The error is the brief, and now it has a number
+
+Detection under-segments: sixteen of twenty-nine clusters merge two or more
+neighbouring families. What that produces is not a containment failure — it is a
+**blended brief**. A probe reaches a contract genuinely derived from its own
+runs, but that contract is also briefed for a sibling task. **110 of the 160
+correct routes land on one.**
+
+Genuine misrouting — reaching a contract with no claim on the prompt at all — is
+**19 of 179 governed probes, 10.6%**. And capability containment holds: **one
+contract in twenty-nine** ended up with capability its family never
+demonstrated, a calendar family that acquired `email` by merging with a
+calendar-and-email family.
+
+The reason is structural rather than lucky. **48 of the 69 families are
+single-domain**, and merging happens *within* a domain: twelve analytics families
+collapse into a handful of analytics contracts whose union is still analytics. A
+cluster that merges neighbours inherits the union of their capability, and when
+neighbours share a footprint that union is a no-op.
+
+> An earlier version of this section reported 50.6% misrouting. That was a bug
+> in the measurement, not the router: a merged cluster was credited to only its
+> *first* family, so a probe reaching a contract built from its own runs scored
+> as an error. Fixed by crediting the whole set. The harness is shipped so the
+> next person can find the next one.
+
+### The threshold is not the lever
+
+The obvious response to over-merging is a stricter threshold. Measured, it is
+not the fix:
+
+| semantic threshold | candidates | pure | misrouted | unmatched | blended |
+|---|---|---|---|---|---|
+| 0.72 (default) | 29 | 13 (45%) | 19 (10.6%) | 97 | 110 |
+| 0.80 | 21 | 11 (52%) | 9 (7.6%) | 157 | 68 |
+| 0.86 | 17 | 8 (47%) | 6 (6.7%) | 187 | 55 |
+
+The **pure/merged ratio barely moves** — 45% to 47% across a wide sweep. What
+falls is how many families are detected at all: 29 candidates down to 17, with
+unmatched nearly doubling. Families that merge, merge at any threshold, because
+the embedding genuinely places them close. Raising the bar loses whole families
+before it separates the merged ones, and every family lost is a task that stays
+ungoverned.
+
+So a single cosine threshold over one embedding is at its limit here. Two things
+would move it, and neither is a tuning change:
+
+- **Abstain on a near-tie.** Built, and measured: `CODIFY_TIE_MARGIN`.
+
+  | margin | routed correctly | misrouted | unmatched | blended |
+  |---|---|---|---|---|
+  | 0 (shipped default) | 161 | 18 (10.1%) | 97 | 111 |
+  | 0.05 | 152 | 15 (9.0%) | 109 | 101 |
+  | 0.12 | 133 | 11 (7.6%) | 132 | 84 |
+
+  It does what it was designed to do and costs **about three correct routes per
+  misroute prevented** — better than the five a stricter threshold costs, and
+  still the wrong trade here. An abstention is an ungoverned run with an
+  unrestricted network; a misroute is a wrong brief *inside a contract's scope*.
+  When the wrong contract is a neighbour with the same footprint, that swaps a
+  contained mistake for an uncontained one. Shipped at `0`, because a corpus
+  where neighbours have different footprints would invert the trade and the
+  mechanism should already be there when it does.
+- **Complete linkage** (`CODIFY_CLUSTER_LINKAGE=complete`). Built, and this is
+  the one that moves. Seed linkage stopped *chaining*, but it cannot split a
+  family whose anchor sits between two neighbours — both genuinely match it.
+  Complete linkage asks every member instead of only the first:
+
+  | | `seed` (shipped) | `complete` |
+  |---|---|---|
+  | pure clusters | 13 / 30 — 43% | **21 / 24 — 88%** |
+  | merged clusters | 17 | **3** |
+  | **blended briefs** | 114 | **18** |
+  | routed correctly | 164 | 100 |
+  | misrouted | 15 (8.4%) | 27 (21.3%) |
+  | contracts wider than observed | 2 / 30 | **1 / 24** |
+
+  The headline is the row nobody would look at. **Correct *and* cleanly
+  briefed** — a probe that reached a contract built from its own family, where
+  that contract is not a blend of siblings — is `164 − 114 = 50` under seed
+  linkage and `100 − 18 = 82` under complete. **64% more runs get a brief
+  written for their actual task**, and containment improves at the same time.
+
+  The cost is coverage: 24 contracts for 69 families instead of 30, and
+  unmatched rises 97 → 149. Purer clusters are smaller clusters, and a smaller
+  cluster is likelier to miss the five-occurrence floor — so families that had a
+  marginal contract now have none, and their probes either miss or land
+  somewhere else, which is where the extra misroutes come from.
+
+  **Shipped at `seed`, unchanged.** One corpus, one run, and candidate counts
+  already move by one between runs on embedding variance alone. Changing a
+  default on a single benchmark is exactly the tuned constant this document
+  argues against elsewhere. What is now true is that the alternative has been
+  built, tested and measured rather than speculated about — and if a second
+  corpus agrees, the switch is one environment variable.
+
+### What this does not measure
+
+Capability footprints come from WorkBench's `domains` column, not from real runs
+— one synthetic host and path per domain. That makes containment measurable at
+all, and makes the domains *cleaner* than observed traffic would be, so 1/29 is
+a floor rather than an estimate.
+
+`base_template` is a *generation* label, not a semantic-equivalence one: *"Forward
+the last email about X to Y"* and *"Forward the latest email about {subject} to
+{recipient_name}"* are two templates and one task. Some merges this section
+counts against the clusterer are the clusterer being right.
+
+---
+
+
 ## 5. What this does not fix
 
 - **Word order.** On PAWS, whose pairs are built to share vocabulary while
@@ -777,6 +918,19 @@ does not decide what it should be asked.
 ---
 
 ## 7. Reproducing the measurements
+
+### The WorkBench benchmark (§4e)
+
+```bash
+git clone --depth 1 https://github.com/olly-styles/WorkBench.git
+WB=./WorkBench/data/processed/tasks_and_outcomes ARK_API_KEY=<ask> ARK_MODEL=ep-… ARK_EMBED_MODEL=ep-… ARK_BASE_URL=https://ark.ap-southeast.volces.com/api/v3   npm run bench:workbench
+```
+
+`SEMANTIC=false` runs the lexical channels only, needs no credentials, and takes
+seconds. `CODIFY_SEMANTIC_THRESHOLD` and `TRAIN` reproduce the sweep table. The
+harness drives the real `CodifyService` — real redaction, clustering, scope
+derivation and routing — so what it measures is the shipped path.
+
 
 ```bash
 # deterministic: padding, containment, clustering, channel combination

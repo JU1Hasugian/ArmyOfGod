@@ -25,7 +25,8 @@ persistent workspaces, Codex CLI on Volcengine Ark — is preserved and verified
 | **Design** | [`docs/CODIFY.md`](docs/CODIFY.md) — architecture, demo script, limitations |
 | **Measurement** | [`docs/SEMANTIC-ROUTING.md`](docs/SEMANTIC-ROUTING.md) — how the matcher was broken and fixed |
 | **Handover** | [`docs/ENGINEERING-LOG.md`](docs/ENGINEERING-LOG.md) — what was tried, measured, discarded |
-| **Verification** | `npm run check` — 246 tests, typecheck, both builds |
+| **Verification** | `npm run check` — 265 tests, typecheck, both builds |
+| **Diagram** | [One page](docs/assets/architecture.svg) — middleware, data flow, trust boundary, enforcement point |
 
 ### What it enforces, observed live
 
@@ -41,6 +42,14 @@ container path, with Codex's own sandbox switched off:
 | **path** | a write to `finance/` — `EROFS`, the directory unchanged |
 | **budget** | HTTP 429 at admission, before the Run existed |
 | **secret** | `GITHUB_TOKEN` observed in past runs and withheld from auto-promotion |
+
+### One governed turn, end to end
+
+[![Codify architecture: the redaction gate, three-channel matching, routing and budget in the control plane; the internal network and allowlisting broker at the enforcement boundary; and the loop that turns observed runs back into a brief and a policy](docs/assets/architecture.svg)](docs/assets/architecture.svg)
+
+The dashed box is the enforcement boundary. Raw prompt text and the real
+provider key stay on the control-plane side of it, and never enter the Agent
+container at all. [The full design →](docs/CODIFY.md#3-architecture)
 
 > [!WARNING]
 > This is a proof of concept. Do not use production data or credentials.
@@ -131,6 +140,23 @@ immediately.
 **[How the matcher was measured, broken, and fixed →](docs/SEMANTIC-ROUTING.md)**
 
 ## Screenshots
+
+### Codify governance — policies nobody wrote
+
+![The Codify governance view: three governed tasks promoted from repetition, each showing the brief it runs under and the network, filesystem and secret scope derived from what its runs actually did](docs/assets/governance.jpg)
+
+Three tasks promoted from repetition alone, each carrying a scope derived from
+what its own runs touched. Release notes reach `github.com`; the dependency
+audit reaches `registry.npmjs.org`; the postmortem reaches **nothing**, because
+across its runs it never left the box. A person writing these three by hand
+would have given them all the same template. Every one carries `secrets: []` —
+`GITHUB_TOKEN` was observed and withheld, because a credential is the one
+capability that genuinely widens reach.
+
+`codify-auto` is the author, and the reviewer's own words sit under each
+contract. Reading the evidence is open and deciding is not: `user-a` sees the
+whole audit trail and is refused the approval — on the route, before the body is
+validated, not hidden in the UI.
 
 ### Agent Playground
 
@@ -359,6 +385,7 @@ docker compose config
 ## Documentation
 
 - [Codify middleware design](docs/CODIFY.md)
+- [Three-minute demo runbook](docs/DEMO.md)
 - [Semantic routing: measurement, diagnosis, fix](docs/SEMANTIC-ROUTING.md)
 - [Engineering log: decisions, rejected ideas, and measurement mistakes](docs/ENGINEERING-LOG.md)
 - [Architecture](docs/ARCHITECTURE.md)

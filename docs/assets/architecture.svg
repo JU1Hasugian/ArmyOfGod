@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 800" width="1120" height="800" font-family="Segoe UI,Inter,system-ui,-apple-system,Helvetica Neue,Arial,sans-serif">
+  <title>Codify architecture: one governed turn, end to end</title>
+  <desc>Middleware spanning the Fastify control plane and the container Runtime. Observed runs yield both a brief and a capability scope; the scope is enforced at the container and broker boundary; evidence returns to the data layer and closes the loop.</desc>
+
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5b6270"/>
+    </marker>
+    <marker id="aLoop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#6b4fbb"/>
+    </marker>
+    <marker id="aDeny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#b4232a"/>
+    </marker>
+    <marker id="aOk" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2f6f4f"/>
+    </marker>
+  </defs>
+
+  <rect width="1120" height="800" fill="#ffffff"/>
+
+  <text x="48" y="42" font-size="23" font-weight="700" fill="#16181d">Codify &#8212; the policy is written by watching the work</text>
+  <text x="48" y="64" font-size="12.5" fill="#5b6270">One governed turn, end to end. Nothing in this path was configured by hand: the brief and the capability scope are both derived from what past runs of the same task actually did.</text>
+
+  <rect x="110" y="86" width="690" height="62" rx="7" fill="#f6f7f9" stroke="#c9cfda"/>
+  <text x="126" y="106" font-size="10.5" font-weight="700" fill="#5b6270" letter-spacing="0.7">EXPERIENCE &#8212; DELIBERATELY THIN</text>
+  <text x="126" y="128" font-size="11" fill="#16181d">Playground &#183; one conversation, the reply filed where it was typed</text>
+  <line x1="456" y1="112" x2="456" y2="138" stroke="#c9cfda"/>
+  <text x="472" y="128" font-size="11" fill="#16181d">Governance &#183; candidates, contracts, rules, denials, trace</text>
+
+  <line x1="455" y1="148" x2="455" y2="164" stroke="#5b6270" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <rect x="110" y="166" width="690" height="190" rx="7" fill="#eef3fb" stroke="#c9cfda"/>
+  <text x="126" y="186" font-size="10.5" font-weight="700" fill="#5b6270" letter-spacing="0.7">CONTROL PLANE &#8212; FASTIFY &#183; AGENTSERVICE &#183; CODIFYSERVICE</text>
+
+  <rect x="130" y="200" width="132" height="62" rx="5" fill="#ffffff" stroke="#a9b4c6"/>
+  <text x="196" y="222" font-size="12.5" font-weight="600" fill="#16181d" text-anchor="middle">&#9312; redact</text>
+  <text x="196" y="239" font-size="10.5" fill="#5b6270" text-anchor="middle">raw prompt text is</text>
+  <text x="196" y="252" font-size="10.5" fill="#5b6270" text-anchor="middle">never persisted</text>
+
+  <rect x="276" y="200" width="196" height="62" rx="5" fill="#ffffff" stroke="#a9b4c6"/>
+  <text x="374" y="221" font-size="12" font-weight="600" fill="#16181d" text-anchor="middle">&#9314; match &#8212; fingerprint OR</text>
+  <text x="374" y="237" font-size="12" font-weight="600" fill="#16181d" text-anchor="middle">containment OR embedding</text>
+  <text x="374" y="253" font-size="10" fill="#5b6270" text-anchor="middle">each evasion is invisible to one channel</text>
+
+  <rect x="486" y="200" width="150" height="62" rx="5" fill="#ffffff" stroke="#a9b4c6"/>
+  <text x="561" y="219" font-size="12.5" font-weight="600" fill="#16181d" text-anchor="middle">&#9316; route</text>
+  <text x="561" y="235" font-size="10.5" fill="#5b6270" text-anchor="middle">matched &#8594; specialist</text>
+  <text x="561" y="248" font-size="10.5" fill="#5b6270" text-anchor="middle">+ brief + contract scope</text>
+  <text x="561" y="259" font-size="9.5" fill="#5b6270" text-anchor="middle">unmatched &#8658; principal_bound</text>
+
+  <rect x="650" y="200" width="130" height="62" rx="5" fill="#ffffff" stroke="#a9b4c6"/>
+  <text x="715" y="222" font-size="12.5" font-weight="600" fill="#16181d" text-anchor="middle">&#9319; budget</text>
+  <text x="715" y="239" font-size="10.5" fill="#5b6270" text-anchor="middle">at admission &#8212;</text>
+  <text x="715" y="252" font-size="10.5" fill="#b4232a" text-anchor="middle">over &#8658; 429, no Run</text>
+
+  <line x1="262" y1="231" x2="274" y2="231" stroke="#5b6270" stroke-width="1.4" marker-end="url(#a)"/>
+  <line x1="472" y1="231" x2="484" y2="231" stroke="#5b6270" stroke-width="1.4" marker-end="url(#a)"/>
+  <line x1="636" y1="231" x2="648" y2="231" stroke="#5b6270" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <rect x="130" y="286" width="392" height="52" rx="5" fill="#f3effc" stroke="#6b4fbb"/>
+  <text x="146" y="306" font-size="12.5" font-weight="600" fill="#16181d">&#9315; promote &#183; &#9317; refine &#8212; the loop closes here</text>
+  <text x="146" y="325" font-size="10.5" fill="#5b6270">reviewer sees a task name and three lists, never prose &#183; narrowing only</text>
+
+  <rect x="536" y="286" width="244" height="52" rx="5" fill="#ffffff" stroke="#a9b4c6" stroke-dasharray="3 3"/>
+  <text x="552" y="303" font-size="10.5" fill="#5b6270">Promotion <tspan font-weight="600" fill="#16181d">narrows</tspan>: those runs already</text>
+  <text x="552" y="317" font-size="10.5" fill="#5b6270">reached those hosts, unbounded. Credentials</text>
+  <text x="552" y="331" font-size="10.5" fill="#5b6270">stay human-gated by default.</text>
+
+  <line x1="455" y1="356" x2="455" y2="374" stroke="#5b6270" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="466" y="370" font-size="10.5" fill="#5b6270">launches with brief + scope</text>
+
+  <rect x="110" y="376" width="690" height="172" rx="7" fill="#fdf4f3" stroke="#b4232a" stroke-width="1.6" stroke-dasharray="7 5"/>
+  <text x="126" y="396" font-size="10.5" font-weight="700" fill="#b4232a" letter-spacing="0.7">AGENT RUNTIME &#8212; ENFORCEMENT BOUNDARY</text>
+
+  <rect x="130" y="408" width="316" height="122" rx="5" fill="#ffffff" stroke="#a9b4c6"/>
+  <text x="146" y="428" font-size="12.5" font-weight="600" fill="#16181d">&#9316;c container launch</text>
+  <text x="146" y="448" font-size="11" fill="#16181d">network <tspan font-family="Consolas,monospace">--internal</tspan> &#183; no route off-host</text>
+  <text x="146" y="466" font-size="11" fill="#16181d">workspace <tspan font-weight="600">ro</tspan> + scope <tspan font-weight="600">rw</tspan> paths layered over</text>
+  <text x="146" y="484" font-size="11" fill="#16181d">env = scope.secrets, by name only</text>
+  <text x="146" y="504" font-size="10.5" fill="#b4232a">a write elsewhere &#8658; EROFS, in the kernel</text>
+  <text x="146" y="520" font-size="10.5" fill="#5b6270">Codex CLI runs here, unmodified</text>
+
+  <rect x="464" y="408" width="316" height="122" rx="5" fill="#ffffff" stroke="#a9b4c6"/>
+  <text x="480" y="428" font-size="12.5" font-weight="600" fill="#16181d">&#9316;d broker &#8212; the only way out</text>
+  <text x="480" y="448" font-size="11" fill="#16181d">CONNECT allowlist = contract scope.domains</text>
+  <text x="480" y="466" font-size="11" fill="#16181d">SNI-level &#183; no TLS interception, no CA</text>
+  <text x="480" y="484" font-size="11" fill="#16181d">holds the real Ark key &#8212; the container</text>
+  <text x="480" y="500" font-size="11" fill="#16181d">sees only a per-run placeholder</text>
+  <text x="480" y="520" font-size="10.5" fill="#b4232a">deny &#8658; DenialEvent</text>
+
+  <line x1="446" y1="469" x2="462" y2="469" stroke="#5b6270" stroke-width="1.4" marker-end="url(#a)"/>
+
+  <line x1="780" y1="452" x2="836" y2="452" stroke="#2f6f4f" stroke-width="1.6" marker-end="url(#aOk)"/>
+  <text x="808" y="440" font-size="10" fill="#2f6f4f" text-anchor="middle">allowlisted</text>
+  <rect x="840" y="430" width="232" height="46" rx="23" fill="#f2f7f4" stroke="#2f6f4f"/>
+  <text x="956" y="458" font-size="12.5" fill="#16181d" text-anchor="middle">the internet</text>
+
+  <path d="M780 496 L808 496 L808 520" fill="none" stroke="#b4232a" stroke-width="1.6" marker-end="url(#aDeny)"/>
+  <rect x="840" y="512" width="232" height="128" rx="6" fill="#fdf4f3" stroke="#b4232a"/>
+  <text x="856" y="532" font-size="10.5" font-weight="700" fill="#b4232a" letter-spacing="0.4">REFUSED &#8212; ALL FOUR OBSERVED LIVE</text>
+  <text x="856" y="553" font-size="9.5" fill="#16181d"><tspan font-weight="600">egress</tspan> a second API the contract never named</text>
+  <text x="856" y="571" font-size="9.5" fill="#16181d"><tspan font-weight="600">path</tspan> write to finance/ &#8212; EROFS, dir unchanged</text>
+  <text x="856" y="589" font-size="9.5" fill="#16181d"><tspan font-weight="600">budget</tspan> HTTP 429 before the Run existed</text>
+  <text x="856" y="607" font-size="9.5" fill="#16181d"><tspan font-weight="600">secret</tspan> GITHUB_TOKEN withheld from auto-grant</text>
+  <text x="856" y="629" font-size="9.5" fill="#5b6270">collected with Codex&#8217;s own sandbox switched off</text>
+
+  <line x1="455" y1="548" x2="455" y2="562" stroke="#5b6270" stroke-width="1.4" marker-end="url(#a)"/>
+  <text x="466" y="560" font-size="10.5" fill="#5b6270">&#9313; what it reached, read, wrote   &#183;   &#9318; spans</text>
+
+  <rect x="110" y="564" width="690" height="82" rx="7" fill="#f4f1f8" stroke="#c9cfda"/>
+  <text x="126" y="584" font-size="10.5" font-weight="700" fill="#5b6270" letter-spacing="0.7">DATA LAYER &#8212; THE EXISTING JSONSTORE, TEN ADDITIVE RECORD TYPES</text>
+  <text x="126" y="606" font-size="11.5" fill="#16181d">PromptObservation &#183; CapabilityObservation &#183; TaskCandidate &#183; TaskContract (versioned, scoped, budgeted) &#183; RouteDecision</text>
+  <text x="126" y="626" font-size="11.5" fill="#16181d">DenialEvent &#183; FeedbackObservation &#183; RefinementProposal &#183; TraceSpan &#183; CoordinationSession</text>
+
+  <path d="M110 605 L68 605 L68 312 L128 312" fill="none" stroke="#6b4fbb" stroke-width="1.8" marker-end="url(#aLoop)"/>
+  <text x="58" y="466" font-size="11" font-weight="600" fill="#6b4fbb" text-anchor="middle" transform="rotate(-90 58 466)">the loop: repetition &#8658; a brief and a policy</text>
+
+  <line x1="48" y1="668" x2="1072" y2="668" stroke="#c9cfda"/>
+
+  <text x="48" y="692" font-size="11" font-weight="700" fill="#16181d">TRUST BOUNDARY</text>
+  <text x="48" y="710" font-size="10.5" fill="#5b6270">Raw prompt text and the real provider key are</text>
+  <text x="48" y="725" font-size="10.5" fill="#5b6270">on the control-plane side and never cross it.</text>
+  <text x="48" y="740" font-size="10.5" fill="#5b6270">Neither is written to the store, and neither</text>
+  <text x="48" y="755" font-size="10.5" fill="#5b6270">enters the Agent container at all.</text>
+
+  <text x="404" y="692" font-size="11" font-weight="700" fill="#16181d">FAIL MODES DIFFER, ON PURPOSE</text>
+  <text x="404" y="710" font-size="10.5" fill="#5b6270"><tspan font-weight="600" fill="#16181d">Routing fails open</tspan> &#8212; an unmatched prompt runs ad hoc,</text>
+  <text x="404" y="725" font-size="10.5" fill="#5b6270">so the Playground never breaks while it is still learning.</text>
+  <text x="404" y="740" font-size="10.5" fill="#5b6270"><tspan font-weight="600" fill="#b4232a">Enforcement fails closed</tspan> &#8212; no broker, no run. There is</text>
+  <text x="404" y="755" font-size="10.5" fill="#5b6270">deliberately no path back to unrestricted network access.</text>
+  <text x="404" y="770" font-size="10.5" fill="#5b6270"><tspan font-weight="600" fill="#16181d">Model calls fail soft</tspan> &#8212; every one has a deterministic fallback.</text>
+
+  <text x="820" y="692" font-size="11" font-weight="700" fill="#16181d">WHY THE CONTAINER, NOT THE TOOL</text>
+  <text x="820" y="710" font-size="10.5" fill="#5b6270">Intercepting Codex&#8217;s tool calls means forking</text>
+  <text x="820" y="725" font-size="10.5" fill="#5b6270">Codex. Everything Codify needs is enforceable</text>
+  <text x="820" y="740" font-size="10.5" fill="#5b6270">one layer down, at a boundary the Starter Kit</text>
+  <text x="820" y="755" font-size="10.5" fill="#5b6270">already owns &#8212; and that layer survives when</text>
+  <text x="820" y="770" font-size="10.5" fill="#5b6270">Landlock is absent and Codex&#8217;s sandbox is not.</text>
+</svg>
