@@ -13,8 +13,16 @@ Requirements:
 - An Ark API key and Responses-capable endpoint
 
 ```bash
-ARK_API_KEY=your-ark-api-key ARK_MODEL=ep-your-endpoint-id npm run poc
+ARK_API_KEY=your-ark-api-key ARK_MODEL=ep-chat-endpoint-id ARK_EMBED_MODEL=ep-embedding-endpoint-id npm run poc
 ```
+
+> Two Ark endpoints, and they are different model families. `ARK_MODEL` is a
+> chat endpoint that runs the Agent's turns and Codify's decisions;
+> `ARK_EMBED_MODEL` is an embedding endpoint that drives only semantic matching.
+> The platform starts without the second and reports
+> `codifySemanticAvailable: false` at `/api/system`, but matches on the lexical
+> channels alone — which is a materially weaker system. Activate both in the Ark
+> console, or an unactivated one answers `ModelNotOpen` with HTTP 404.
 
 Open <http://localhost:3000>. Press `Ctrl+C` to stop the server and remove this
 instance's remaining Runtime containers.

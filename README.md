@@ -21,7 +21,7 @@ persistent workspaces, Codex CLI on Volcengine Ark — is preserved and verified
 
 | | |
 |---|---|
-| **Start** | `ARK_API_KEY=… ARK_MODEL=ep-… npm run poc`, then open **Codify governance** |
+| **Start** | `ARK_API_KEY=… ARK_MODEL=ep-… ARK_EMBED_MODEL=ep-… npm run poc`, then open **Codify governance** |
 | **Design** | [`docs/CODIFY.md`](docs/CODIFY.md) — architecture, demo script, limitations |
 | **Measurement** | [`docs/SEMANTIC-ROUTING.md`](docs/SEMANTIC-ROUTING.md) — how the matcher was broken and fixed |
 | **Handover** | [`docs/ENGINEERING-LOG.md`](docs/ENGINEERING-LOG.md) — what was tried, measured, discarded |
@@ -136,6 +136,18 @@ specialist of its own.
 Start it with `npm run poc`, then open **Codify governance** in the sidebar. The
 review queue is seeded with observed runs, so there is something to approve
 immediately.
+
+> **Two Ark endpoints, not one.** `ARK_MODEL` is a chat endpoint — the Agent's
+> turns run on it, and so do Codify's four decisions. `ARK_EMBED_MODEL` is an
+> **embedding** endpoint, and it drives only the semantic matching channel. They
+> are different model families and different APIs; ours resolve to
+> `deepseek-v4-flash` and `skylark-embedding-vision` respectively.
+>
+> The platform runs without the embedding one and says so at `/api/system`
+> (`codifySemanticAvailable`) — but it matches on the lexical channels alone,
+> which is a materially weaker system: a task family clusters at 7 runs from 3
+> people instead of 12 from 6, and a request phrased in your own words will
+> usually not route at all. Set both.
 
 **[Read the full design, demo script, tests, and limitations →](docs/CODIFY.md)**
 **[How the matcher was measured, broken, and fixed →](docs/SEMANTIC-ROUTING.md)**
@@ -396,9 +408,9 @@ cp deploy/volcengine/terraform.tfvars.example \
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `ARK_API_KEY` | Required | Ark model API key. |
-| `ARK_MODEL` | Required | Responses-capable endpoint or model ID. |
+| `ARK_MODEL` | Required | Responses-capable **chat** endpoint (ours: `deepseek-v4-flash`). Runs the Agent's turns and Codify's brief drafting, scope review, rule review and planner. |
 | `ARK_BASE_URL` | Beijing v3 endpoint | Ark OpenAI-compatible API URL. |
-| `ARK_EMBED_MODEL` | Unset | Ark embedding endpoint ID. Without it Codify matches on the lexical channels alone; `/api/system` reports which. Activate the model in the Ark console first, or the API answers `ModelNotOpen`. |
+| `ARK_EMBED_MODEL` | Unset | Ark **embedding** endpoint ID (ours: `skylark-embedding-vision`, 2048 dims), reached at `/embeddings/multimodal`. A different model family from `ARK_MODEL` — you need both. Without it Codify matches on the lexical channels alone and `/api/system` reports `codifySemanticAvailable: false`. Activate the model in the Ark console first, or the API answers `ModelNotOpen` with HTTP 404, which is indistinguishable from a wrong endpoint id unless you read the message. |
 | `APP_AUTH_TOKEN` | Empty on loopback | Shared demo token; use 24+ random characters remotely. |
 | `RUNTIME_PROVIDER` | `local-process` | `container` for disposable local Runtime containers. |
 | `CODEX_SANDBOX_MODE` | `workspace-write` | Codex inner sandbox mode. |
