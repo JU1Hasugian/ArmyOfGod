@@ -11,6 +11,8 @@ data/
 workspaces/
 codex-home/
 coverage/
+# Cloned by the reader to run `npm run bench:workbench`; not ours to vendor.
+WorkBench/
 *.log
 *:Zone.Identifier
 *.tsbuildinfo
