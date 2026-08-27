@@ -72,6 +72,95 @@ function channelLabel(channel: MatchChannel | undefined): string {
  * looking for when a Run did something surprising, and pre-fetching one per
  * message would put a request per Run on every render of the transcript.
  */
+/**
+ * What is actually in the workspace.
+ *
+ * The methodology note this project runs on says to compare the *files* a run
+ * produced and not the chat message describing them — and until this existed
+ * the browser could only show the message. It is also the other half of a
+ * refused write: "the directory is unchanged" is a claim until somebody can
+ * look at the directory.
+ *
+ * Read-only. There is no upload counterpart, for the reason CODIFY.md §11
+ * gives: staging bytes into a workspace belongs to a deployment, and an
+ * ingress would itself need governing.
+ */
+function WorkspaceFiles({ agentId }: { agentId: string }) {
+  const [files, setFiles] = useState<{ path: string; size: number; modifiedAt: string }[]>([]);
+  const [open, setOpen] = useState(false);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [body, setBody] = useState<{ content: string; truncated: boolean } | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    api
+      .workspace(agentId)
+      .then((result) => setFiles(result.files))
+      .catch((cause) => setProblem(cause instanceof Error ? cause.message : String(cause)));
+  }, [agentId]);
+
+  useEffect(() => {
+    if (!open) return;
+    load();
+    setSelected(null);
+    setBody(null);
+  }, [open, load]);
+
+  const show = (file: string) => {
+    setSelected(file);
+    setBody(null);
+    api
+      .workspaceFile(agentId, file)
+      .then((result) => setBody({ content: result.content, truncated: result.truncated }))
+      .catch((cause) => setProblem(cause instanceof Error ? cause.message : String(cause)));
+  };
+
+  return (
+    <div className="workspace-files">
+      <button className="link-button" onClick={() => setOpen((value) => !value)}>
+        {open ? "Hide" : "Show"} the workspace
+      </button>
+      {open && (
+        <div className="workspace-body">
+          <div className="workspace-toolbar">
+            <span className="muted">{files.length} files</span>
+            <button className="link-button" onClick={load}>
+              Refresh
+            </button>
+          </div>
+          {problem && <p className="workspace-problem">{problem}</p>}
+          <div className="workspace-split">
+            <ul className="workspace-list">
+              {files.map((file) => (
+                <li key={file.path}>
+                  <button
+                    className={"workspace-file " + (file.path === selected ? "selected" : "")}
+                    onClick={() => show(file.path)}
+                  >
+                    <code>{file.path}</code>
+                    <span>{file.size}</span>
+                  </button>
+                </li>
+              ))}
+              {files.length === 0 && <li className="muted">Nothing here yet.</li>}
+            </ul>
+            <div className="workspace-preview">
+              {selected && !body && <p className="muted">Loading {selected}…</p>}
+              {body && (
+                <>
+                  <pre>{body.content}</pre>
+                  {body.truncated && <p className="muted">Truncated for display.</p>}
+                </>
+              )}
+              {!selected && <p className="muted">Pick a file to read it.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RunTraceView({ runId }: { runId: string }) {
   const [trace, setTrace] = useState<RunTrace | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -207,8 +296,18 @@ function SplitBanner({
                   {turn ? (
                     <>
                       <strong>{turn.agentName}</strong>
+                      {/*
+                        A promoted specialist is named after its contract, so
+                        printing both rendered "Postmortem from incident file ·
+                        Postmortem from incident file". The pair is only worth
+                        showing when the two actually differ.
+                      */}
                       {turn.contractName ? (
-                        <em> · {turn.contractName}</em>
+                        turn.contractName === turn.agentName ? (
+                          <em> · under its own contract</em>
+                        ) : (
+                          <em> · {turn.contractName}</em>
+                        )
                       ) : (
                         <em> · no contract yet — observed for promotion</em>
                       )}
@@ -349,6 +448,8 @@ function RunEvidence({ run, enforcing }: { run: AgentRun; enforcing: boolean }) 
 export default function App() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** Whether the selection came from a click rather than from the auto-pick. */
+  const userPickedRef = useRef(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [system, setSystem] = useState<SystemInfo | null>(null);
   // Active contracts, so the sidebar can tell a promoted specialist from an
@@ -412,6 +513,26 @@ export default function App() {
         : (next[0]?.id ?? null),
     );
   }, []);
+
+  /*
+   * Land on an Agent you talk to.
+   *
+   * `refreshAgents` can only fall back to the first Agent in the list, and it
+   * runs before the contracts that identify specialists have loaded — so the
+   * page could open on a promoted specialist, which is the one thing the
+   * product asks you not to do: a specialist receives routed work and is
+   * presented as a catalogue entry, not a place to start a conversation.
+   *
+   * Re-checked when contracts arrive, and abandoned the moment somebody picks
+   * an Agent themselves.
+   */
+  useEffect(() => {
+    if (userPickedRef.current || ownAgents.length === 0) return;
+    const onSpecialist = specialists.some((entry) => entry.agent.id === selectedId);
+    if (selectedId === null || onSpecialist) {
+      setSelectedId(ownAgents[0]!.id);
+    }
+  }, [ownAgents, specialists, selectedId]);
 
   const refreshMessages = useCallback(async (agentId: string) => {
     const result = await api.messages(agentId);
@@ -790,12 +911,12 @@ export default function App() {
             from the frontend — but it is presented as a catalogue entry rather
             than as somewhere to start a conversation.
           */}
-          {ownAgents.length > 0 && <div className="agent-group">Your agents</div>}
           {ownAgents.map((agent) => (
             <button
               className={"agent-card " + (agent.id === selectedId ? "selected" : "")}
               key={agent.id}
               onClick={() => {
+                userPickedRef.current = true;
                 setSelectedId(agent.id);
                 setView("playground");
                 setDelegationNotice(null);
@@ -823,6 +944,7 @@ export default function App() {
               }
               key={agent.id}
               onClick={() => {
+                userPickedRef.current = true;
                 setSelectedId(agent.id);
                 setView("playground");
                 setDelegationNotice(null);
@@ -854,7 +976,17 @@ export default function App() {
           <span className="eyebrow">Runtime</span>
           <strong>{system?.runtime ?? "Checking…"}</strong>
           <span>
-            {system?.arkModel ?? "Ark model not configured"}
+            {/*
+              The endpoint id, not shown.
+
+              `ARK_MODEL` is not a credential — it cannot authenticate anything —
+              but it names the team's own Ark deployment, and this card is pinned
+              to the bottom of the viewport, so it sat in every frame of a demo
+              recording and in every screenshot. The operator needs to know a
+              model is configured, never which one; the id is still in
+              `/api/system` for anyone debugging.
+            */}
+            {system?.arkConfigured ? "Ark model configured" : "Ark model not configured"}
             {system?.containerEngine ? " · " + system.containerEngine : ""}
           </span>
           <span className={system?.codifyEnforcing ? "codify-on" : "codify-off"}>
@@ -989,11 +1121,52 @@ export default function App() {
                   <span className="eyebrow">Playground</span>
                   <h2>Build something with your Agent</h2>
                 </div>
-                <div className="session-info">
-                  <span className="pulse" />
-                  {selected.codexThreadId ? "Session connected" : "New session"}
-                </div>
+                {/*
+                  A status line until there is something to clear, then a
+                  control. A long Codex thread fails by reporting work it did
+                  not do, and until now the only way out of one was deleting
+                  the Agent.
+                */}
+                {selected.codexThreadId ? (
+                  <button
+                    className="session-info session-reset"
+                    disabled={busy || selected.status === "busy"}
+                    title="Start a fresh Codex thread. Your governance record is unaffected."
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        await api.resetSession(selected.id);
+                        setMessages([]);
+                        setSplitSession(null);
+                        setDelegationNotice(null);
+                        await refreshAgents();
+                        await refreshMessages(selected.id);
+                      } catch (reason) {
+                        setError(reason instanceof Error ? reason.message : String(reason));
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    <span className="pulse" />
+                    Session connected · start fresh
+                  </button>
+                ) : (
+                  <div className="session-info">
+                    <span className="pulse" />
+                    New session
+                  </div>
+                )}
               </div>
+
+              {/*
+                Keyed by principal and Agent, so switching either remounts it
+                closed. A workspace is per principal now: leaving the panel open
+                across a switch would show the previous person's files under the
+                new person's name, which is the same class of bug that keying
+                the transcript by principal fixed.
+              */}
+              <WorkspaceFiles key={principal + ":" + selected.id} agentId={selected.id} />
 
               {delegationNotice && (
                 <div className="delegation-banner" role="status">

@@ -286,6 +286,17 @@ button {
   color: #edebe4;
 }
 
+/*
+ * A specialist's name carries its scope's meaning — "Audit dependencies to
+ * reports/audit.md" truncated to "Audit dependencies to re..." tells a reader
+ * nothing about which task this Agent is the specialist for. Own Agents keep
+ * the single-line ellipsis; these wrap.
+ */
+.agent-specialist .agent-card-copy strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .agent-card-copy span {
   font-size: 10px;
   color: #8e8e87;
@@ -655,6 +666,23 @@ textarea:focus {
   display: flex;
   align-items: center;
   gap: 6px;
+}
+
+/* The same pill, once it becomes a control. */
+.session-reset {
+  background: transparent;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.session-reset:hover:not(:disabled) {
+  border-color: #b9b5a8;
+  color: var(--ink);
+}
+
+.session-reset:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .pulse {
@@ -1266,6 +1294,21 @@ textarea:focus {
   margin-bottom: 10px;
 }
 
+/*
+ * The title block has to grow, or the name is unreadable.
+ *
+ * An <input> reports its intrinsic width from the `size` attribute — about 20
+ * characters — never from its value. In a shrink-to-fit flex child that width
+ * is what the parent sizes to, so `width: 100%` on `.candidate-name` resolved
+ * against ~210px and the task name a reviewer is about to approve was cut off
+ * mid-word. Growing the block lets the name reach its 420px max-width.
+ */
+.candidate-card header > div:first-child,
+.contract-card header > div:first-child {
+  flex: 1;
+  min-width: 0;
+}
+
 .candidate-name {
   font: inherit;
   font-size: 16px;
@@ -1284,6 +1327,25 @@ textarea:focus {
 .candidate-name:focus {
   border-color: var(--line);
   background: #fff;
+}
+
+/*
+ * One line under a section heading saying what the section is. The page is
+ * read by people who did not build it, and a heading alone ("Denials",
+ * "Task candidates") assumes vocabulary they do not have yet.
+ */
+.budget-idle {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.section-hint {
+  margin: -4px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+  max-width: 68ch;
 }
 
 .candidate-meta {
@@ -2208,4 +2270,127 @@ textarea:focus {
   font-size: 0.82rem;
   line-height: 1.5;
   color: var(--muted, #667085);
+}
+
+/*
+ * The workspace, read-only.
+ *
+ * Anchored in the Playground top bar rather than given a page of its own: it is
+ * evidence about the conversation you are looking at, and a reviewer comparing
+ * two runs should not have to navigate away and back.
+ */
+/*
+ * Above the conversation, or it is not clickable.
+ *
+ * `.messages` paints over this row, so the toggle was fully opaque and fully
+ * enabled with `elementFromPoint` returning `div.messages` — a button that
+ * looks live and swallows every click. The panel had a stacking context; the
+ * control that opens it did not.
+ */
+.workspace-files {
+  position: relative;
+  z-index: 6;
+  padding: 0 18px;
+}
+
+/*
+ * A block in the flow, not a popover.
+ *
+ * It was absolutely positioned off the top bar, which put its left half outside
+ * an ancestor that clips — so the half of each filename that says *which
+ * directory* it is in was the half that disappeared. Nothing here needs to
+ * float above the conversation.
+ */
+.workspace-body {
+  margin: 0 0 12px;
+  /* Its own stacking context, so the conversation cannot paint over it. */
+  position: relative;
+  z-index: 5;
+  background: #ffffff;
+  border: 1px solid var(--line, #e0ded6);
+  border-radius: 10px;
+  padding: 12px;
+}
+
+.workspace-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.workspace-split {
+  display: grid;
+  grid-template-columns: minmax(210px, 38%) 1fr;
+  gap: 12px;
+  max-height: 52vh;
+}
+
+.workspace-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--line, #e0ded6);
+}
+
+.workspace-file {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.workspace-file:hover {
+  background: var(--wash, #f4f2ec);
+}
+
+.workspace-file.selected {
+  background: #efeafc;
+}
+
+/*
+ * The name has to shrink, not the row.
+ *
+ * A flex item will not shrink below its content width without `min-width: 0`,
+ * so `out/RELEASE.md` pushed the byte count out and the *start* of the path —
+ * the part that says which directory it is in — was the half that got clipped.
+ */
+.workspace-file code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-file span {
+  flex: none;
+  color: var(--muted, #777870);
+  font-size: 11px;
+}
+
+.workspace-preview {
+  overflow: auto;
+}
+
+.workspace-preview pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.workspace-problem {
+  color: #b4232a;
+  font-size: 12px;
+  margin: 0 0 8px;
 }

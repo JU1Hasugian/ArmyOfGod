@@ -250,6 +250,7 @@ function BudgetPanel({
   const [status, setStatus] = useState<BudgetStatus | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   const load = useCallback(() => {
     api
@@ -276,6 +277,26 @@ function BudgetPanel({
   const ceiling = contract.budget?.maxTotalTokens;
   const spent = status?.usage.totalTokens ?? 0;
   const ratio = ceiling ? Math.min(1, spent / ceiling) : 0;
+
+  /*
+   * A contract with no ceiling and no spend has nothing to report, and it was
+   * reporting it in four lines and an input on every card — above the scope,
+   * which is the thing anyone actually came to read. Collapsed to one line
+   * until there is either a ceiling or some spend to show.
+   */
+  if (!ceiling && spent === 0 && !editing) {
+    return (
+      <div className="budget budget-idle">
+        <span className="eyebrow">Budget</span>
+        <span className="budget-none">Unlimited — bounded only by the Runtime timeout.</span>
+        {contract.status === "active" && (
+          <button className="link-button" disabled={disabled} onClick={() => setEditing(true)}>
+            Set a ceiling
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="budget">
@@ -548,6 +569,7 @@ function ContractCard({
   onError: (message: string) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [showBrief, setShowBrief] = useState(false);
 
   const revise = async (scope: CapabilityScope) => {
     setBusy(true);
@@ -617,6 +639,17 @@ function ContractCard({
         <span className={"badge badge-" + contract.status}>{contract.status}</span>
       </header>
 
+      {/*
+        The brief was visible on the candidate and then disappeared the moment it
+        was approved — which is backwards, because promotion is what turns a
+        draft into the thing an Agent actually runs under. It is half of what a
+        contract is; the scope is the other half.
+      */}
+      <button className="link-button" onClick={() => setShowBrief((value) => !value)}>
+        {showBrief ? "Hide" : "Show"} the brief this specialist runs under
+      </button>
+      {showBrief && <pre className="spec-preview">{contract.systemPrompt}</pre>}
+
       {contract.refinements.length > 0 && (
         <div className="learned-rules">
           <span className="eyebrow">Learned from usage</span>
@@ -627,13 +660,6 @@ function ContractCard({
           </ul>
         </div>
       )}
-
-      <BudgetPanel
-        contract={contract}
-        onChanged={onChanged}
-        onError={onError}
-        disabled={busy}
-      />
 
       <ScopeView
         scope={contract.scope}
@@ -656,6 +682,13 @@ function ContractCard({
             secrets: contract.scope.secrets.filter((entry) => entry !== secret),
           })
         }
+      />
+
+      <BudgetPanel
+        contract={contract}
+        onChanged={onChanged}
+        onError={onError}
+        disabled={busy}
       />
 
       {contract.status === "active" && (
@@ -768,6 +801,7 @@ export default function Governance({
   const [contracts, setContracts] = useState<TaskContract[]>([]);
   const [denials, setDenials] = useState<DenialEvent[]>([]);
   const [refinements, setRefinements] = useState<RefinementProposal[]>([]);
+  const [showNewSession, setShowNewSession] = useState(false);
   const [sessions, setSessions] = useState<CoordinationSession[]>([]);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
@@ -836,74 +870,12 @@ export default function Governance({
 
       <section>
         <h2>
-          Task candidates <span className="count">{pending.length} pending</span>
+          Governed tasks <span className="count">{contracts.length}</span>
         </h2>
-        {pending.length === 0 && !loading && (
-          <p className="muted">
-            No cluster has yet reached 5 runs from 3 distinct users. One user repeating a
-            prompt never reaches this queue.
-          </p>
-        )}
-        {pending.map((candidate) => (
-          <CandidateCard
-            key={candidate.id}
-            candidate={candidate}
-            onDecided={() => void refresh()}
-            onError={onError}
-          />
-        ))}
-      </section>
-
-      <section>
-        <h2>
-          Shared sessions <span className="count">{sessions.length}</span>
-        </h2>
-        <NewSession
-          agents={agents}
-          onCreated={() => void refresh()}
-          onError={onError}
-        />
-        {sessions.length === 0 && !loading && (
-          <p className="muted">
-            A shared session routes each step to the specialist whose contract matches it, so
-            no participant ever holds more than its own task&apos;s scope.
-          </p>
-        )}
-        {sessions.map((session) => (
-          <SessionCard
-            key={session.id}
-            session={session}
-            onChanged={() => void refresh()}
-            onError={onError}
-          />
-        ))}
-      </section>
-
-      <section>
-        <h2>
-          Learned improvements{" "}
-          <span className="count">{pendingRefinements.length} pending</span>
-        </h2>
-        {pendingRefinements.length === 0 && !loading && (
-          <p className="muted">
-            When several people give a specialist the same correction, it appears here as a
-            proposed rule. One person asking is a preference and is ignored.
-          </p>
-        )}
-        {pendingRefinements.map((proposal) => (
-          <RefinementCard
-            key={proposal.id}
-            proposal={proposal}
-            onDecided={() => void refresh()}
-            onError={onError}
-          />
-        ))}
-      </section>
-
-      <section>
-        <h2>
-          Contracts <span className="count">{contracts.length}</span>
-        </h2>
+        <p className="section-hint">
+          Promoted from repetition. Each carries a brief distilled from how the task is
+          really done, and a scope derived from what its runs actually touched.
+        </p>
         {contracts.length === 0 && !loading && (
           <p className="muted">Approve a candidate to create the first governed task.</p>
         )}
@@ -916,11 +888,14 @@ export default function Governance({
           />
         ))}
       </section>
-
       <section>
         <h2>
           Denials <span className="count">{denials.length}</span>
         </h2>
+        <p className="section-hint">
+          What the boundary refused. Every row is a target a governed run reached for and
+          did not get.
+        </p>
         {denials.length === 0 && !loading && (
           <p className="muted">
             Nothing has been blocked yet. Denials appear here the moment a governed run
@@ -953,6 +928,78 @@ export default function Governance({
             </tbody>
           </table>
         )}
+      </section>
+      <section>
+        <h2>
+          Task candidates <span className="count">{pending.length} pending</span>
+        </h2>
+        <p className="section-hint">
+          Repeating work that cleared both floors and is waiting on a decision.
+        </p>
+        {pending.length === 0 && !loading && (
+          <p className="muted">
+            No cluster has yet reached 5 runs from 3 distinct users. One user repeating a
+            prompt never reaches this queue.
+          </p>
+        )}
+        {pending.map((candidate) => (
+          <CandidateCard
+            key={candidate.id}
+            candidate={candidate}
+            onDecided={() => void refresh()}
+            onError={onError}
+          />
+        ))}
+      </section>
+      <section>
+        <h2>
+          Learned improvements{" "}
+          <span className="count">{pendingRefinements.length} pending</span>
+        </h2>
+        {pendingRefinements.length === 0 && !loading && (
+          <p className="muted">
+            When several people give a specialist the same correction, it appears here as a
+            proposed rule. One person asking is a preference and is ignored.
+          </p>
+        )}
+        {pendingRefinements.map((proposal) => (
+          <RefinementCard
+            key={proposal.id}
+            proposal={proposal}
+            onDecided={() => void refresh()}
+            onError={onError}
+          />
+        ))}
+      </section>
+      <section>
+        <h2>
+          Shared sessions <span className="count">{sessions.length}</span>
+        </h2>
+        <p className="section-hint">
+          A shared session routes each step to the specialist whose contract matches it, so
+          no participant ever holds more than its own task&apos;s scope.
+        </p>
+        <button className="link-button" onClick={() => setShowNewSession((value) => !value)}>
+          {showNewSession ? "Cancel" : "Open a shared session"}
+        </button>
+        {showNewSession && (
+          <NewSession
+            agents={agents}
+            onCreated={() => {
+              setShowNewSession(false);
+              void refresh();
+            }}
+            onError={onError}
+          />
+        )}
+        {sessions.map((session) => (
+          <SessionCard
+            key={session.id}
+            session={session}
+            onChanged={() => void refresh()}
+            onError={onError}
+          />
+        ))}
       </section>
     </div>
   );
