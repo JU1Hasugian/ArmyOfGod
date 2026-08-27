@@ -70,6 +70,29 @@ const envSchema = z.object({
    */
   CODIFY_SEMANTIC_THRESHOLD: z.coerce.number().min(0).max(1).default(0.72),
   /**
+   * How far ahead the winning contract must be before routing commits to it.
+   *
+   * Measured on WorkBench (`docs/SEMANTIC-ROUTING.md` §4e): where families are
+   * neighbours, the failure is not a low score, it is two contracts scoring
+   * almost the same. A stricter threshold does not separate them — it loses
+   * whole families first. A margin does, because it acts only on the ambiguous
+   * pair and leaves confident matches untouched.
+   *
+   * The units are *confidence* (score over that channel's own threshold), so
+   * one margin is comparable across channels. `0` restores take-the-best.
+   * Abstaining here means the ordinary fail-open path: run ad hoc, observe, and
+   * let the run become evidence — never a wider scope.
+   */
+  CODIFY_TIE_MARGIN: z.coerce.number().min(0).max(1).default(0),
+  /**
+   * How a prompt joins an existing cluster. `seed` compares against the
+   * cluster's first member — transitive by construction, which is what
+   * stopped chaining. `complete` requires a match against every member,
+   * which splits a family whose seed bridges two neighbours at the cost of
+   * clusters that may never reach the occurrence floor.
+   */
+  CODIFY_CLUSTER_LINKAGE: z.enum(["seed", "complete"]).default("seed"),
+  /**
    * Master switch for the embedding channel. Off under test so the suite never
    * reaches the network; the lexical channels are exercised on their own there.
    */
@@ -232,6 +255,8 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env) {
     codifyBrokerImage: env.CODIFY_BROKER_IMAGE?.trim() || env.CONTAINER_RUNTIME_IMAGE,
     codifyMatchThreshold: env.CODIFY_MATCH_THRESHOLD,
     codifyContainmentThreshold: env.CODIFY_CONTAINMENT_THRESHOLD,
+    codifyTieMargin: env.CODIFY_TIE_MARGIN,
+    codifyClusterLinkage: env.CODIFY_CLUSTER_LINKAGE,
     codifySemanticThreshold: env.CODIFY_SEMANTIC_THRESHOLD,
     // Same default shape as codifyDraftingEnabled: on in normal operation, off
     // under test, and always overridable.

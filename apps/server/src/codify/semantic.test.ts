@@ -372,4 +372,44 @@ describe("clustering does not chain across unrelated tasks", () => {
     expect(clusters).toHaveLength(1);
     expect(clusters[0]).toHaveLength(5);
   });
+
+  /**
+   * Seed linkage cannot split a family whose anchor sits between two
+   * neighbours: both really do match it. Complete linkage can, because it asks
+   * every member rather than only the first. Measured on WorkBench in
+   * `docs/SEMANTIC-ROUTING.md` §4e — 43% pure clusters to 88%, at the cost of
+   * clusters small enough to miss the occurrence floor.
+   */
+  it("complete linkage splits a cluster its seed was bridging", () => {
+    const thresholds: MatchThresholds = { fingerprint: 0.65, containment: 0.6, semantic: 0.72 };
+    const base = vector(41, 128);
+    // An anchor that both neighbours clear, while they do not clear each other.
+    const anchor = candidate("anchor task anchor task", packEmbedding(base));
+    const left = candidate("left neighbour job", packEmbedding(nearVector(base, 0.78, 91)));
+    const right = candidate("right neighbour job", packEmbedding(nearVector(base, 0.78, 92)));
+
+    expect(matchAgainst(anchor, left, thresholds).matched).toBe(true);
+    expect(matchAgainst(anchor, right, thresholds).matched).toBe(true);
+    expect(matchAgainst(left, right, thresholds).matched).toBe(false);
+
+    // Seed linkage keeps all three together: each matched the anchor.
+    expect(clusterByMatch([anchor, left, right], thresholds, "seed")).toHaveLength(1);
+
+    // Complete linkage refuses `right`, because it does not match `left`.
+    const complete = clusterByMatch([anchor, left, right], thresholds, "complete");
+    expect(complete).toHaveLength(2);
+    expect(complete[0]).toHaveLength(2);
+    expect(complete[1]).toEqual([right]);
+  });
+
+  it("defaults to seed linkage, so the shipped behaviour is unchanged", () => {
+    const base = vector(43, 128);
+    const anchor = candidate("anchor task anchor task", packEmbedding(base));
+    const left = candidate("left neighbour job", packEmbedding(nearVector(base, 0.78, 93)));
+    const right = candidate("right neighbour job", packEmbedding(nearVector(base, 0.78, 94)));
+    const thresholds: MatchThresholds = { fingerprint: 0.65, containment: 0.6, semantic: 0.72 };
+    expect(clusterByMatch([anchor, left, right], thresholds)).toEqual(
+      clusterByMatch([anchor, left, right], thresholds, "seed"),
+    );
+  });
 });

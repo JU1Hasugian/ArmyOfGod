@@ -414,9 +414,12 @@ function fingerprintScore(left: string, right: string): number {
  * The same twelve reduce to one pure cluster once the semantic channel is
  * present.
  */
+export type ClusterLinkage = "seed" | "complete";
+
 export function clusterByMatch<T extends MatchCandidate>(
   items: T[],
   thresholds: MatchThresholds,
+  linkage: ClusterLinkage = "seed",
 ): T[][] {
   const clusters: T[][] = [];
   for (const item of items) {
@@ -440,8 +443,20 @@ export function clusterByMatch<T extends MatchCandidate>(
     // Comparing against the seed makes membership transitive by construction:
     // every member matched the same anchor, so a cluster cannot drift away from
     // what it started as. It costs order-dependence, which the pass already had.
+    /*
+     * `complete` requires the item to match *every* member, not just the seed.
+     *
+     * Seed linkage stopped chaining, but it cannot stop a seed that genuinely
+     * sits between two families: on WorkBench, where twelve analytics tasks are
+     * neighbours, "make a bar chart of X" and "if X exceeded a threshold" both
+     * clear the line against the same anchor. Complete linkage splits those,
+     * at the cost of smaller clusters that may not reach the occurrence floor.
+     * Measured in `docs/SEMANTIC-ROUTING.md` §4e.
+     */
     const existing = clusters.find((members) =>
-      matchAgainst(members[0] as T, item, thresholds).matched,
+      linkage === "complete"
+        ? members.every((member) => matchAgainst(member as T, item, thresholds).matched)
+        : matchAgainst(members[0] as T, item, thresholds).matched,
     );
     if (existing) existing.push(item);
     else clusters.push([item]);

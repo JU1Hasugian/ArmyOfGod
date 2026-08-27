@@ -112,6 +112,55 @@ describe("Codify path helpers", () => {
     expect(containingDirectory("node_modules/pkg/index.js")).toBeNull();
   });
 
+  /**
+   * The workplace case: five people, five of their own files.
+   *
+   * Nobody in an office summarises the *same* spreadsheet. Each person brings
+   * their own, so no single filename appears in a majority of the runs — and a
+   * frequency floor applied to filenames would clear nothing and derive a
+   * contract with no readable path at all, which is the failure mode §11 of the
+   * design doc names.
+   *
+   * It survives because the floor is applied to the containing *directory*, not
+   * the file. Divergent filenames inside one directory collapse to that
+   * directory before anything is counted.
+   */
+  it("derives a shared directory when every person brought their own file", () => {
+    const people = ["alice", "bob", "carla", "dev", "erin"];
+    const scope = deriveScope(
+      people.map((person, index) =>
+        observation({
+          runId: "run-" + index,
+          // One file each, and no two the same.
+          pathsRead: ["finance/" + person + "-q1.csv"],
+          pathsWritten: ["out/" + person + "-summary.md"],
+        }),
+      ),
+    );
+
+    expect(scope.paths).toContainEqual({ path: "out", mode: "rw" });
+    expect(scope.paths).toContainEqual({ path: "finance", mode: "ro" });
+    // And never the individual files, which would be a scope nobody else can use.
+    expect(scope.paths.every((entry) => !entry.path.includes(".csv"))).toBe(true);
+  });
+
+  it("derives nothing readable when the same task ran in different directories", () => {
+    // The other half of the same property, and the reason an upload path that
+    // let people choose a destination would make derivation worse: divergent
+    // *directories* do not collapse, so none of them clears the floor.
+    const scope = deriveScope([
+      observation({ runId: "r1", pathsRead: ["finance/q1.csv"] }),
+      observation({ runId: "r2", pathsRead: ["data/q1.csv"] }),
+      observation({ runId: "r3", pathsRead: ["uploads/alice/q1.csv"] }),
+      observation({ runId: "r4", pathsRead: ["reports/q1.csv"] }),
+      observation({ runId: "r5", pathsRead: ["inbox/q1.csv"] }),
+    ]);
+
+    // Fails in the safe direction: the task breaks visibly and an operator
+    // widens it through the escalation path, rather than quietly over-granting.
+    expect(scope.paths).toEqual([]);
+  });
+
   it("collapses descendants into their ancestor", () => {
     expect(collapsePaths(["out", "out/notes", "repo"])).toEqual(["out", "repo"]);
     expect(collapsePaths(["out", "."])).toEqual(["."]);
