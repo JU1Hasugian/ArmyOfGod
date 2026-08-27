@@ -68,6 +68,23 @@ Now open **Codify governance** and confirm you see **GOVERNED TASKS 3**.
 > to settle on three before you go near the camera. The cold open in Part 1.1
 > uses the postmortem contract, and it is often the last to land.
 
+**Then check the brief, because it is what makes Part 3 work.** Click **Show the
+brief this specialist runs under** on the release-notes contract. It should name
+the output's section headings explicitly — *"exactly these section headings in
+order: Summary, New Features, Bug Fixes…"*.
+
+> Why this is worth thirty seconds: the brief is drafted by a model at promotion
+> time, so every clean store gets a slightly different one. Measured over four
+> stores before the drafting instruction was tightened, **two of four** produced
+> a brief that grouped output *by release version* instead of by kind — which is
+> a structure that changes with the input, so every run invented its own
+> headings and Part 3's payoff collapsed to three distinct structures out of
+> three. The instruction now forbids headings derived from the data (0 of 4 on
+> re-measurement), but this check costs nothing and the failure is silent.
+>
+> If it groups by version rather than by kind: wipe `.local`, restart, run the
+> throwaway turn again.
+
 Then switch back to a fresh principal for the recording.
 
 ### 0.5 Two sentences to have ready
@@ -85,6 +102,68 @@ The Ark key. Not in a terminal, not in an env dump, not in scrollback. The UI no
 longer prints the endpoint id, but your shell will if you let it.
 
 ---
+
+## Part 0b — The three-minute cut
+
+This document is longer than three minutes. That is deliberate — it explains
+what each beat is and why — but **it is not a shooting order.** This is.
+
+### The edit that makes it fit
+
+Two beats are slow only because they are sequential. **Film them as parallel
+windows and show them at once**: five browser windows for the five ad-hoc runs,
+three for the governed ones. Each window is a different principal, and the
+principal is per-tab React state, so five tabs each on a different user works.
+
+That turns 65 seconds of watching people type into about 30 of seeing the
+contrast, and it is what buys room for the compound split and the refinement
+loop.
+
+| time | beat | why it survives |
+|---|---|---|
+| **0:00–0:12** | Cold open on the postmortem contract, then the Agent: **READY**, controls, workspace | The thesis in one sentence, plus §1.8 #1 |
+| **0:12–0:28** | Five windows at once: five wordings, five different documents. Then *"and every one ran with everything"* | The problem, and the line that makes it a security story |
+| **0:28–0:52** | Governance: three contracts, three scopes — `github.com` / **no egress** / `registry.npmjs.org`, every one `secrets: []` | **"Nobody wrote this policy."** The 40% category |
+| **0:52–1:08** | Three windows at once: three wordings → **one structure**, beside the five | §1.8 #2, #3 — real turns, real files |
+| **1:08–1:26** | Refinement: two people asked for bigger headings, the rule is on the contract, **v1 → v2, no operator** | The loop improving itself — and the guard that let it |
+| **1:26–1:54** | Denials: `ab.chatgpt.com` ×3 unrequested, then `finance/` untouched after a refused write | §1.8 #5, and the most convincing evidence here |
+| **1:54–2:22** | Compound split: one request, two specialists, **neither holding the union** | The best architecture story; the only beat that cannot be said in a sentence |
+| **2:22–2:48** | Revoke `github.com` → next run refused → **escalate from the recorded denial** → restored, v3 | §1.8 #6, revocability and recovery in one |
+| **2:48–3:00** | `npm run check` green, one limitation said aloud | Closes on measurement, not a claim |
+
+**That is full.** Nine beats at twenty seconds average. Nothing else fits, and
+adding a tenth makes all nine worse.
+
+### Set these up before you record
+
+Three beats need state that takes minutes to create and seconds to show:
+
+- **Refinement (1:08)** — send the governed task *and* a correction as two
+  different principals beforehand, so the rule is already on the contract. Film
+  the result, not the four turns. Use a correction that does **not** restate the
+  task: *"Make the headings bigger and bolder"* works, *"...in that release
+  note"* routes as a new request instead of a correction.
+- **Compound split (1:54)** — the banner is **transient React state**. It renders
+  while the request is in flight and is gone on reload, so this one must be
+  filmed live. Two real turns; speed it up in the edit.
+- **The five and the three** — run them, capture each output from the workspace
+  viewer as it lands. Switching principal changes the workspace, so a file you
+  did not capture is a file you must re-run for.
+
+### What is cut, and how not to lose it
+
+Out: the attack that never appears, the 403, the 429, and the trace as its own
+beat. Say them in one sentence over the governance shot —
+
+> *"There is also an anti-poisoning floor that keeps one person's fifteen
+> credential-collection requests out of the queue entirely, a budget that
+> refuses before a run exists, and a correlated trace for every run. All in the
+> repo, all tested."*
+
+— and let **Part 7b's coverage table** carry the detail.
+
+---
+
 
 ## Part 1 — The hook
 
@@ -106,9 +185,24 @@ Then **cut**. Do not explain it. Do not scroll.
 > nobody of anything. *A policy that wrote itself* is the part nobody else is
 > doing. Lead with the novelty and earn it afterwards.
 
-### Shot 1.2 — five people, five answers (00:05)
+### Shot 1.2 — the Agent, and its state (00:05)
 
 **Open:** Playground, **General assistant**
+
+Five seconds, and it is a numbered requirement rather than colour: the brief
+asks the demo to *"create or select an Agent from the frontend and show its
+current lifecycle state."*
+
+**Do:** point at the sidebar card and the header — the Agent, its **READY**
+badge, and the **Settings / Stop / Delete** controls beside it. Open **Show the
+workspace** so the files it can see are on screen before anything runs.
+
+**Say:**
+
+> *"One ordinary Agent, created from the browser, ready, with a workspace. No
+> policy anywhere yet — nothing has been configured."*
+
+### Shot 1.3 — five people, five answers (00:10)
 
 Send these five, **each as a different principal**, and **tick `Run ad-hoc`
 before every single one** (bottom-right of the composer):
@@ -132,7 +226,7 @@ different level of detail. Put them side by side in the edit.
 > *"Same task. Five people. Five different answers. Whoever wrote the best prompt
 > got the best answer — and nobody else will ever find out what they wrote."*
 
-### Shot 1.3 — the second reveal, and do not skip it
+### Shot 1.4 — the second reveal, and do not skip it
 
 **Do:** point at the evidence panel under each of the five replies. Each says:
 
@@ -335,6 +429,15 @@ is in `docs/ENGINEERING-LOG.md` §9:
 
 Every governed run produced *Summary · Timeline · Impact · Root Cause · Action
 Items*. No two ad-hoc runs agreed on anything.
+
+**Re-measured on this task, from wiped stores**, five ad-hoc against three
+governed. The ad-hoc arm gives five distinct structures every time. The governed
+arm gave **1** — but only once the drafting instruction was tightened to forbid
+headings derived from the data. Before that it gave 1, 2, 3 and 3 across four
+stores, depending on whether that store's brief happened to pin the structure at
+all. That is the failure Part 0 now checks for, and it is worth knowing that the
+mechanism under test is the *brief*, not the matcher: routing was 4/4 correct in
+every one of those runs, including the ones where the output structure scattered.
 
 > **Say the caveat, it costs five seconds and buys the whole result:** *"That's
 > consistency of structure, on one task. The governed runs also covered less,
@@ -626,6 +729,66 @@ with the two steps listed, each naming the specialist that ran it — one
 
 ---
 
+## Part 6b — Revoke it, then put it back
+
+The last three numbered things the brief asks for, in one beat: a delegated
+permission that is **revocable**, a **recovery**, and the platform *"remaining
+understandable and controllable afterward."*
+
+### 6b.1 Take a permission away
+
+**Signed in as:** `operator`
+**Open:** Codify governance → the release-notes contract → **NETWORK**
+**Do:** click **revoke** next to `github.com`.
+
+**Expect:** the contract versions — **v1 → v2** — with an empty network list. The
+old version is deprecated, not edited; the change is a new record.
+
+**Say:**
+
+> *"Revoking is the only edit that never needs evidence. A reviewer may always
+> remove. Adding something back is the direction that needs a recorded denial
+> naming the exact target, which is why the escalation button exists and why it
+> is not just an editable text box."*
+
+### 6b.2 Watch the next run lose it
+
+**Signed in as:** `user-a`
+**Do:** send the governed task again.
+
+**Expect:** it still routes, still runs, still writes its file — and `github.com`
+is now **refused at the broker**, appearing in **Denials** alongside the
+`ab.chatgpt.com` rows.
+
+**Say:**
+
+> *"Nothing was redeployed and no container was rebuilt. The next run simply
+> launched against a different allowlist, because the allowlist is read from the
+> contract at launch."*
+
+### 6b.3 Put it back, and show the platform is fine
+
+**Signed in as:** `operator`
+**Do:** use **Escalate from recorded denials** on that contract. The denial you
+just produced is the evidence that permits the widening.
+
+**Expect:** `github.com` returns, the contract goes **v2 → v3**, and the next run
+reaches it again.
+
+**Say:**
+
+> *"That is the whole loop in thirty seconds — granted from behaviour, removed by
+> a person, restored from recorded evidence, and every step is a version you can
+> read. The platform is in exactly the state it was, and nothing about it became
+> harder to understand along the way."*
+
+> **If you are short on time, cut 6b.2 and keep 6b.1 and 6b.3.** The revoke and
+> the evidence-backed restore are the two halves that matter; the run in between
+> is the proof and can be described instead of shown.
+
+---
+
+
 ## Part 7 — Close
 
 **Do:** click **Show trace** on the governed run.
@@ -646,6 +809,38 @@ with the two steps listed, each naming the specialist that ran it — one
 
 Ending on a measured limitation is stronger than ending on a claim. It tells a
 reviewer the rest of the numbers were arrived at the same way.
+
+---
+
+## Part 7b — What this covers, against the brief
+
+Every numbered requirement in §1.8, and every checkbox in §1.10, with where it
+happens. If a beat is cut for time, this is the table that says what was lost.
+
+| §1.8 — required live demo | where |
+|---|---|
+| 1. Create or select an Agent from the frontend, show its lifecycle state | Shot 1.2 — the card, the **READY** badge, Settings / Stop / Delete |
+| 2. Invoke the Agent through the Playground with a real task | Shots 1.3 and Part 3 — eight real Codex turns |
+| 3. At least one real model, file, tool, sandbox or data action | Part 3 — the artefacts, read out of the workspace viewer |
+| 4. The middleware behaviour and the evidence it produces | Part 2 (contracts), Part 4 (denials), Part 7 (trace) |
+| 5. An appropriate failure, denial, degraded, abuse or recovery case | Part 4 — all four denial kinds; Part 5 — the abuse case; Part 6b — recovery |
+| 6. The platform remains understandable and controllable afterward | Part 6b — revoked, refused, restored, three readable versions |
+
+| §1.10 — acceptance | where |
+|---|---|
+| A reviewer can clone, start, and create or test an Agent | `npm run poc`, and **Try it yourself** in the README |
+| One or more meaningful middleware capabilities | Parts 2, 3, 3b, 4, 6 |
+| Executes in a backend, Runtime, data or infrastructure path — not only the UI | Part 4 — refusals happen at the broker and in the kernel, and 4.1 is refused on the route before the body is validated |
+| Documentation sufficient to understand and reproduce | `CODIFY.md`, this runbook, `bench/demo-verify.mjs` |
+| `npm run check` passes | Part 7 |
+| No secret in source, history, logs, traces, screenshots or demo output | Part 0.6 — and the runtime card no longer prints the endpoint id |
+
+| §1.10 — optional evidence | where |
+|---|---|
+| A delegated permission scoped **or revocable**, enforced outside the UI, demonstrated | Part 2 (scoped), Part 6b (revoked and restored), Part 4 (enforced at the broker) |
+| An end-to-end Run producing a correlated trace with model, tool, sandbox, policy or infrastructure events | Part 7 — one `traceId`, ~24 spans across `ORCHESTRATION`, `POLICY_DECISION`, `SANDBOX_EXECUTION`, `MODEL_CALL`, `EGRESS` |
+| A defined threat blocked or contained, the asset unchanged, **cleanup or recovery demonstrated** | Part 4.3 — `finance/` unchanged and the write redirected into scope; Part 6b — recovery |
+| A team-defined lifecycle, reliability, memory, budget, provider or coordination capability | Part 3b (refinement), Part 4.2 (budget), Part 6 (coordination) |
 
 ---
 
@@ -704,10 +899,10 @@ Codex's own sandbox off:
 | Every prompt in Parts 1, 3, 4.3 and 6 | ✅ probed against the live router before being written here |
 | The workspace viewer, per-principal | ✅ one principal's file absent from another's listing |
 | The split banner across two specialists | ✅ postmortem (*no egress*) + release notes (`github.com`), in parallel |
-| **4.1 the 403** | ❌ tests only |
-| **4.2 the 429** | ❌ tests only |
-| **4.3 the EROFS** | ❌ tests only |
-| **Part 3b, the refinement loop** | ⏳ unit-tested and now covered by `bench/demo-verify.mjs`; awaiting the clean-run grid |
+| **4.1 the 403** | ✅ `bench/demo-verify.mjs`, clean store |
+| **4.2 the 429** | ✅ `bench/demo-verify.mjs`, clean store |
+| **4.3 the EROFS** | ✅ `finance/` unchanged; the refused write is redirected into the path the task *is* permitted |
+| **Part 3b, the refinement loop** | ✅ a rule from two people applied with no operator, and the guard's reasoning recorded |
 
 **4.1, 4.2 and Part 3b are now driven by `bench/demo-verify.mjs`**, which runs
 every beat above from a wiped store. Run it before you record:
@@ -727,6 +922,68 @@ surprise on camera.
 > and a "click Show the workspace" that pointed at the wrong Agent after
 > workspaces became per-principal. Each was found by running it, not by reading
 > it. A runbook is only as current as the last time somebody executed it.
+
+---
+
+## Part 9b — Five clean-store runs, measured
+
+`bench/demo-verify.mjs`, five times, each from a **wiped store**: the platform
+re-seeds, one throwaway run triggers promotion, and every beat below is driven
+over HTTP exactly as a person would. Not five repeats of one session — five
+independent starts.
+
+| beat | runs passed |
+|---|---|
+| preflight — enforcing, codex, ark, semantic | **5/5** |
+| promotion: contracts exist | **5/5** |
+| promotion: secrets clamped on every contract | **5/5** |
+| promotion: scopes genuinely differ | **5/5** |
+| promotion: a release-notes contract among them | 4/5 |
+| 4.1 — 403 for a non-operator · reads stay open | **5/5** |
+| 4.2 — 429 at admission | 4/5 |
+| 4.3 — path denial recorded · `finance/` unchanged | **5/5** |
+| 4.4 — `ab.chatgpt.com` refused, unrequested | **5/5** |
+| 1 — five ad-hoc are `user_override` · five distinct structures | **5/5** |
+| 3 — three governed all route | **5/5** |
+| 3 — three governed give **one** structure | **5/5** |
+| 3 — governed converge more than ad-hoc | **5/5** |
+| 5b — a correction from two people becomes a rule | 4/5 |
+| 5b — the guard decided it without an operator | 4/5 |
+
+### The one run that was not clean, and why it took three beats with it
+
+Run 5 promoted **two** contracts rather than three, and the missing one was the
+release-notes contract everything downstream uses. So 4.2 and both refinement
+beats had nothing to act on — one root cause, four rows.
+
+Two explanations are consistent with the data and this document does not claim
+to know which: the harness polls until the contract count stops moving for
+eighteen seconds, and promotion is progressive because each contract costs two
+model calls — so a slow endpoint looks identical to a finished one. The other
+possibility is that `reviewScope` **held** that candidate, which is designed
+behaviour: it is a tier rather than a boundary, it fails closed, and a held
+candidate waits for a human instead of being auto-approved.
+
+**What it means for filming:** confirm **GOVERNED TASKS 3** before you record,
+which Part 0.4 already tells you to do. One store in five will need a wipe and a
+retry, and that is a thirty-second cost if you check and an unrecoverable one if
+you do not.
+
+### One row that looks like a failure and is not
+
+`4.3 refused write redirected into scope` reads **2/5**. It is a conditional
+line that only prints when the Agent, refused on `finance/`, chooses to write
+its copy somewhere it *is* permitted. Three runs it simply did not try. The
+assertion that carries the claim — `finance/ unchanged` — is **5/5**.
+
+### Two beats that had never passed before today
+
+`5b` is the refinement loop, and it failed every single run until the drafting
+instruction, the budget-restore bug and the correction wording were all fixed.
+`three governed give one structure` was **1 of 4** before the drafting
+instruction was tightened to forbid headings derived from the data, and is
+**5 of 5** after. Both numbers are in this document because they are the two
+places where the demo's claims were weakest, and neither was found by reading.
 
 ---
 

@@ -530,6 +530,7 @@ boundary that is not applied.
 | office run (1,748 prompts) | the **learning loop** from an empty store | scratch harness |
 | baseline acceptance (§1.3) | the Starter Kit still works: create, run, follow-up on the **same Codex session**, stop/restart with the workspace and conversation intact, edit, delete | by hand against `npm run poc` |
 | enforcement, live | all four denial kinds refused on the container path with Codex's own sandbox off | `npm run poc` + the demo script |
+| **five clean-store runs** | **every beat of the demo, from a wiped store, five independent starts** — 13 of 15 beats 5/5; one store promoted two contracts rather than three and took three dependent beats with it | `node bench/demo-verify.mjs` |
 
 **Headline numbers** (all in `docs/SEMANTIC-ROUTING.md`):
 

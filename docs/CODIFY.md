@@ -102,37 +102,40 @@ the real provider key are on the left of it and never cross.
 ```mermaid
 flowchart TB
     subgraph EX["Experience — deliberately thin"]
-        PG["Playground · one conversation"]
-        GOV["Governance · candidates, contracts,<br/>learned rules, denials, trace"]
+        PG["Playground · one conversation<br/>the reply is filed where it was typed"]
+        GOV["Governance · governed tasks, denials,<br/>candidates, learned rules, trace<br/><i>reads open to everyone; decisions are not</i>"]
     end
 
     subgraph CP["Control plane — Fastify · AgentService · CodifyService"]
-        RED["① redact<br/><i>only the redacted form is stored</i>"]
+        RED["① redact<br/><i>raw prompt text is never persisted</i>"]
         MATCH["③ match — fingerprint OR containment OR embedding<br/><i>ORed: each evasion is invisible to one channel</i>"]
-        ROUTE["⑤a route<br/>matched → contract scope + brief<br/>specialist, unmatched → principal_bound<br/>otherwise → ad hoc, observed"]
+        ROUTE["⑤a route<br/>matched → specialist + brief + contract scope<br/>unmatched on a specialist → principal_bound<br/>otherwise → ad hoc, still observed"]
         BUD["⑧ budget — at admission<br/><i>over ⇒ 429 before the Run exists</i>"]
-        GATE["④ promote · ⑥ refine · operator-gated decisions<br/><i>narrowing only; secrets stay human-gated</i>"]
+        GATE["④ promote · ⑥ refine — unattended<br/><b>scope guard</b>: a task name and three lists, never prose<br/><b>rule guard</b>: a rule IS prose, so structural refusal first<br/><i>both fail closed · narrowing only · secrets human-gated</i>"]
     end
 
     subgraph RT["Agent Runtime — ENFORCEMENT BOUNDARY"]
-        CTR["⑤c container<br/>network --internal · no route off-host<br/>workspace ro + scope rw paths<br/><i>a write elsewhere ⇒ EROFS</i>"]
-        BRK["⑤d broker — the only way out<br/>allowlist = scope.domains<br/>holds the real Ark key<br/><i>deny ⇒ DenialEvent</i>"]
+        CTR["⑤c container launch<br/>network --internal · no route off-host<br/>workspace ro + scope rw layered over, <b>per principal</b><br/>env = scope.secrets, by name only<br/><i>a write elsewhere ⇒ EROFS, in the kernel</i>"]
+        BRK["⑤d broker — the only way out<br/>CONNECT allowlist = contract scope.domains<br/>holds the real Ark key; the container sees a placeholder<br/><i>deny ⇒ DenialEvent</i>"]
     end
 
-    STORE[("Data layer — JsonStore<br/>observations · contracts · decisions<br/>denials · spans · sessions")]
+    STORE[("Data layer — the existing JsonStore<br/>observations · contracts · decisions<br/>denials · rules · spans · sessions")]
 
     PG --> RED --> MATCH --> ROUTE --> BUD --> CTR
     CTR --> BRK
-    BRK -.->|"② what it reached, read, wrote"| STORE
-    CTR -.->|"⑦ spans: route, budget, runtime, egress"| STORE
+    BRK -.->|"② what it reached"| STORE
+    CTR -.->|"② what it read and wrote · ⑦ spans"| STORE
     STORE ==>|"the loop: repetition ⇒ a brief and a policy"| GATE
     GATE ==> ROUTE
     STORE --> GOV
 
     BRK -->|allowlisted only| NET(["the internet"])
+    BRK -.->|refused| DENY["egress · path · budget · secret<br/><i>all four observed live, with<br/>Codex's own sandbox switched off</i>"]
 
     classDef boundary stroke-dasharray: 6 4
+    classDef refused stroke:#b4232a,color:#b4232a
     class RT boundary
+    class DENY refused
 ```
 
 The loop is the double arrow: everything a run does is observed, and enough
@@ -1340,6 +1343,46 @@ validation failure became a `500`. Codify's policy refusals were reaching the
 browser as a bare `Bad Request`. The handler now registers before that block,
 restoring the behaviour the baseline's own code intended. Covered by a regression
 test asserting the production-mode error shape.
+
+---
+
+## 12b. Threat model
+
+The brief asks for protected assets, actors, trust boundaries, abuse cases,
+implemented controls and known residual risks. All six of its threat classes are
+addressed; two are addressed only partly, and those are named as such rather
+than rounded up.
+
+**Protected assets.** The provider credential and any managed secret; each
+principal's workspace contents and conversation; the contracts themselves, since
+a contract *is* a permission; and the observation record, because promotion is
+derived from it.
+
+**Actors.** A principal (asserted by header — see §11), an operator, the
+platform itself, the Agent process, and anyone who can write text a principal
+will paste.
+
+**Trust boundaries.** Two that matter. The **HTTP boundary**, where a scope in a
+request body is stripped before it reaches the service. And the **container
+boundary**, where the workspace is mounted read-only, the network is
+`--internal` with no route off-host, and the broker is the only egress.
+
+| Threat | Controls implemented | Residual |
+|---|---|---|
+| **Credential theft or exposure** | The container never receives the real key: `base_url` points at the broker, which attaches the credential upstream, so `env` inside the run yields a per-run placeholder. Secrets reach the engine **by name only**, so none appears in an engine command line, in `docker inspect`, or in the host process list. Redaction runs *before* persistence — eleven secret fixtures never reach a stored observation. Auto-promotion **withholds credentials by default** and records the withholding as a denial. | Redaction is pattern-based; a novel secret format could survive it. The Ark path is plain HTTP inside the internal network so the broker can attach the key — a deliberate trade for keeping it out of the container. |
+| **Privilege escalation or confused delegation** | The whole design. Scope is *derived* from what runs did, never requested. A reviewer may only ever **remove**; widening requires a recorded `DenialEvent` naming the exact target. `principal_bound` means a specialist runs under its own contract's scope whatever it is asked, so evading the matcher costs the brief and gains nothing. A compound request is **split and each fragment routed separately**, so the union scope is unreachable — the confused-deputy shape, closed by construction. A `scope` in the request body is stripped at the HTTP boundary. Every decision is attributed: `codify-auto` or a named operator, with the reviewer's own reasoning stored. | Derived scope reflects observed behaviour, not intent: if every exemplar legitimately touched a credential, the derived scope includes it. Codify makes scope visible and revocable; it does not make it correct. |
+| **Prompt injection or tool misuse** | The egress allowlist is the real control — an injected instruction can only reach hosts the *task's own runs* justified, and the refusal needs no cooperation from the model. Prompt sanitisation keeps embedded directives out of a generated brief. `reviewScope` **never sees prose**, only a task name and three lists. `reviewRule` refuses structurally — host, path, command, credential — before a model is asked. | Egress control is host-level: the broker allowlists on the `CONNECT` host without terminating TLS, so exfiltration *to an allowlisted host* is not prevented. And the staged injection case in §10 was refused by the **model**, not by this middleware — do not present it as enforcement. |
+| **Sandbox escape or untrusted code** | Non-privileged container, workspace mounted **read-only** with only the scope's writable paths layered back over it, so a write elsewhere is `EROFS` in the kernel. Controlled mounts; per-Agent Codex home rather than one shared across Agents; a network with no route off-host. | **Partial, and stated as such.** Codify constrains what a cooperating-but-compromised Agent can *reach*; it does not defend against container escape. The honest claim is containment of prompt-injection and confused-deputy cases, not sandbox security. |
+| **Cross-user access or data exfiltration** | A promoted specialist is one Agent everybody routes to, so all three shared things are keyed by principal: the **transcript**, the **Codex thread**, and the **workspace**. Outbound allowlist at the broker. Cloud metadata endpoints are never derivable *and* refused at the broker even when an allowlist names them. Deciding governance is gated on the route, before the body is validated; reading never is. Negative tests throughout — neither principal's turn appears in the other's view, neither principal's file appears in the other's listing. | Two principals share a *contract*, so a host one person's runs justified is reachable by the other. Which rows a data system returns for a given caller is that system's job, through an identity this platform asserts rather than authenticates (§11a, §11). |
+| **Runaway execution or cost** | Token, run and per-run ceilings refused **at admission** — HTTP 429 before a Run record exists, with a `budget` denial. Spend follows the whole contract lineage, so narrowing a scope cannot reset it, and an in-flight run counts. Coordination sessions carry a turn ceiling checked before anything else, and stop after two consecutive failures or a declared completion. One active run per Agent. The Starter Kit's stop control is preserved. | Budget binds at admission, not mid-turn: the control plane cannot interrupt a Codex turn without forking Codex, so a run allowed to start is allowed to finish and one turn can overshoot. What the ceiling guarantees is that the *next* run does not start — which bounds the runaway loop it exists for. |
+
+### The abuse case the platform is built around
+
+One person, repeating a credential-collection request fifteen times, asking for
+the archive to be uploaded off-box. It clears any frequency bar and **never
+reaches the review queue**, because it fails the distinct-user floor. Frequency
+is not evidence. It ships in the seeded corpus so the absence is checkable in
+the UI rather than asserted here.
 
 ---
 

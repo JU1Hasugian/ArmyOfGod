@@ -27,6 +27,7 @@ persistent workspaces, Codex CLI on Volcengine Ark — is preserved and verified
 | **Handover** | [`docs/ENGINEERING-LOG.md`](docs/ENGINEERING-LOG.md) — what was tried, measured, discarded |
 | **Verification** | `npm run check` — 271 tests, typecheck, both builds |
 | **Diagram** | [One page](docs/assets/architecture.svg) — middleware, data flow, trust boundary, enforcement point |
+| **Threat model** | [`docs/CODIFY.md` §12b](docs/CODIFY.md) — all six threat classes, controls, and the residual risk of each |
 
 ### What it enforces, observed live
 
@@ -138,6 +139,57 @@ immediately.
 
 **[Read the full design, demo script, tests, and limitations →](docs/CODIFY.md)**
 **[How the matcher was measured, broken, and fixed →](docs/SEMANTIC-ROUTING.md)**
+
+## Try it yourself in ten minutes
+
+Not a scripted tour — five steps that end in **a contract you caused**, from
+prompts you wrote. Everything below runs against the seeded corpus, so there is
+nothing to configure.
+
+```bash
+ARK_API_KEY=… ARK_MODEL=ep-… ARK_EMBED_MODEL=ep-… npm run poc
+```
+
+**1 — Look at a policy nobody wrote.** Open **Codify governance**. Three tasks,
+three different scopes. Release notes reach `github.com`; the postmortem reaches
+**nothing**, because across its runs it never left the box. Every one carries
+`secrets: []` — `GITHUB_TOKEN` was observed in those runs and withheld, because a
+credential is the one capability that genuinely widens reach.
+
+*Contracts appear one at a time over ~30 seconds after the first run completes;
+each costs two model calls.*
+
+**2 — Ask in your own words.** In the Playground, request release notes from
+`./repo` however you would phrase it. It routes to the specialist and answers in
+the same conversation. You did not pick the specialist and did not need to know
+it existed. Check the evidence line: the channel that matched is usually the
+semantic one, where the lexical fingerprint scores 0.00.
+
+**3 — Try to leave the fence.** Ask that same governed task to also write a copy
+into `./finance/`. Then open **Show the workspace** and look at `finance/` — the
+fixture files are there and your copy is not. The refusal is `EROFS` from the
+kernel, because the workspace goes in read-only and only the scope's writable
+paths are layered back over it.
+
+Now open **Denials** and find the row nobody asked for: `ab.chatgpt.com`,
+refused. That is Codex's own phone-home, made on every turn whatever the task
+is. Nothing in the container was asked to cooperate.
+
+**4 — Try to decide something you may not.** As `user-a`, edit a contract's
+scope. `403`, from the route, before the body is validated. Switch to `operator`
+and it works. Reads were never gated — an audit trail only the auditor can see is
+worth much less.
+
+**5 — Make it promote something of yours.** Pick any repeated job — *"count the
+rows in ./finance and write a one-line summary to ./out/rows.md"* — and send it
+**as three different principals**, five times between them, using the switcher.
+Watch **Task candidates**, then watch it promote itself with a scope derived
+from what *your* runs touched.
+
+Then try it once more from a fourth principal, in different words. It routes.
+
+> If you want the same thing without clicking: `node bench/demo-verify.mjs 1`
+> runs every one of those beats from a wiped store and prints PASS/FAIL per beat.
 
 ## Screenshots
 

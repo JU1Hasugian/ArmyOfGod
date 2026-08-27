@@ -20,6 +20,7 @@ import type {
 } from "./types";
 
 function ScopeView({
+  canDecide = true,
   scope,
   onToggleDomain,
   onTogglePath,
@@ -31,6 +32,8 @@ function ScopeView({
   onToggleDomain?: (domain: string) => void;
   onTogglePath?: (path: string) => void;
   onToggleSecret?: (secret: string) => void;
+  /** Revoking is a governance decision, so it follows the same gate. */
+  canDecide?: boolean;
 }) {
   const wholeWorkspace = scope.paths.some(
     (entry) => entry.mode === "rw" && entry.path === ".",
@@ -119,6 +122,7 @@ function ScopeView({
 }
 
 function CandidateCard({
+  canDecide,
   candidate,
   onDecided,
   onError,
@@ -126,6 +130,7 @@ function CandidateCard({
   candidate: TaskCandidate;
   onDecided: () => void;
   onError: (message: string) => void;
+  canDecide: boolean;
 }) {
   const [scope, setScope] = useState<CapabilityScope>(candidate.proposedScope);
   const [name, setName] = useState(candidate.proposedName);
@@ -217,10 +222,20 @@ function CandidateCard({
 
       {candidate.status === "pending" && (
         <footer className="candidate-actions">
-          <button className="button button-primary" disabled={busy} onClick={approve}>
+          <button
+            className="button button-primary"
+            disabled={busy || !canDecide}
+            title={canDecide ? undefined : "Only an operator can decide governance. Reading it is open to everyone."}
+            onClick={approve}
+          >
             Approve and create Agent
           </button>
-          <button className="button" disabled={busy} onClick={reject}>
+          <button
+            className="button"
+            disabled={busy || !canDecide}
+            title={canDecide ? undefined : "Only an operator can decide governance. Reading it is open to everyone."}
+            onClick={reject}
+          >
             Reject
           </button>
         </footer>
@@ -560,6 +575,7 @@ function SessionCard({
 }
 
 function ContractCard({
+  canDecide,
   contract,
   onChanged,
   onError,
@@ -567,6 +583,7 @@ function ContractCard({
   contract: TaskContract;
   onChanged: () => void;
   onError: (message: string) => void;
+  canDecide: boolean;
 }) {
   const [busy, setBusy] = useState(false);
   const [showBrief, setShowBrief] = useState(false);
@@ -663,7 +680,8 @@ function ContractCard({
 
       <ScopeView
         scope={contract.scope}
-        editable={contract.status === "active" && !busy}
+        canDecide={canDecide}
+        editable={contract.status === "active" && !busy && canDecide}
         onToggleDomain={(domain) =>
           revise({
             ...contract.scope,
@@ -688,12 +706,17 @@ function ContractCard({
         contract={contract}
         onChanged={onChanged}
         onError={onError}
-        disabled={busy}
+        disabled={busy || !canDecide}
       />
 
       {contract.status === "active" && (
         <footer className="candidate-actions">
-          <button className="button" disabled={busy} onClick={escalate}>
+          <button
+            className="button"
+            disabled={busy || !canDecide}
+            title={canDecide ? undefined : "Only an operator can decide governance. Reading it is open to everyone."}
+            onClick={escalate}
+          >
             Escalate from recorded denials
           </button>
         </footer>
@@ -703,6 +726,7 @@ function ContractCard({
 }
 
 function RefinementCard({
+  canDecide,
   proposal,
   onDecided,
   onError,
@@ -710,6 +734,7 @@ function RefinementCard({
   proposal: RefinementProposal;
   onDecided: () => void;
   onError: (message: string) => void;
+  canDecide: boolean;
 }) {
   const [rule, setRule] = useState(proposal.proposedRule);
   const [busy, setBusy] = useState(false);
@@ -761,10 +786,20 @@ function RefinementCard({
 
       {proposal.status === "pending" && (
         <footer className="candidate-actions">
-          <button className="button button-primary" disabled={busy || !rule.trim()} onClick={() => void act(true)}>
+          <button
+            className="button button-primary"
+            disabled={busy || !rule.trim() || !canDecide}
+            title={canDecide ? undefined : "Only an operator can decide governance. Reading it is open to everyone."}
+            onClick={() => void act(true)}
+          >
             Add to the brief
           </button>
-          <button className="button" disabled={busy} onClick={() => void act(false)}>
+          <button
+            className="button"
+            disabled={busy || !canDecide}
+            title={canDecide ? undefined : "Only an operator can decide governance. Reading it is open to everyone."}
+            onClick={() => void act(false)}
+          >
             Reject
           </button>
         </footer>
@@ -859,9 +894,9 @@ export default function Governance({
           <strong>Signed in as {principal} — read only.</strong>
           <p>
             Anyone can read the evidence: an audit trail only the auditor can see is worth
-            much less. Approving a task, editing a scope, or applying a learned rule is
-            refused by the control plane, not just hidden here. Switch to an operator to
-            decide.
+            much less. The decisions are not offered to you here — and they are also
+            refused on the route, before the request body is validated, so a button is
+            not what is stopping you. Switch to an operator to decide.
           </p>
         </div>
       )}
@@ -881,6 +916,7 @@ export default function Governance({
         )}
         {contracts.map((contract) => (
           <ContractCard
+            canDecide={isOperator}
             key={contract.id}
             contract={contract}
             onChanged={() => void refresh()}
@@ -944,6 +980,7 @@ export default function Governance({
         )}
         {pending.map((candidate) => (
           <CandidateCard
+            canDecide={isOperator}
             key={candidate.id}
             candidate={candidate}
             onDecided={() => void refresh()}
@@ -964,6 +1001,7 @@ export default function Governance({
         )}
         {pendingRefinements.map((proposal) => (
           <RefinementCard
+            canDecide={isOperator}
             key={proposal.id}
             proposal={proposal}
             onDecided={() => void refresh()}
