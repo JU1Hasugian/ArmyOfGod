@@ -877,6 +877,16 @@ happens. If a beat is cut for time, this is the table that says what was lost.
   fresh".** A Codex thread that accumulates takes starts reporting work it did
   not do. Different personas already get separate threads.
 - **Remove any budget ceiling you set in 4.2** before continuing.
+- **Film before you rehearse, not after — and know what an exhausted endpoint
+  looks like.** Every beat costs real turns; one `demo-verify` pass is twelve.
+  Run it back to back a few times and Ark starts answering **429 Too Many
+  Requests**, or a turn runs past the 600s Runtime timeout. Both surface in the
+  UI as a Run that failed for no visible reason, and both look exactly like a
+  platform bug.
+  Before debugging anything, read the Run's error text. `exceeded retry limit,
+  last status: 429` and `Runtime timed out after 600000 ms` are the endpoint
+  asking you to wait — not the platform breaking. This is how the final
+  from-scratch verification produced its only two failures.
 
 ---
 
