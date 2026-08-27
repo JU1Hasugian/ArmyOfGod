@@ -110,14 +110,21 @@ async function iteration(n) {
   // — the scope reviewer and the brief drafter — so three contracts take
   // roughly half a minute to all appear, one at a time. Waiting for the first,
   // or for a short pause between them, both under-count.
+  // Promotion is progressive, not atomic. Each candidate costs two model calls -
+  // the scope reviewer and the brief drafter - so the seeded corpus's three
+  // contracts arrive one at a time, and how long that takes depends entirely on
+  // the endpoint that day. Measured twice at eighteen seconds of quiet: both
+  // times the harness gave up and all three had promoted by the time anyone
+  // looked. A short window cannot tell a slow endpoint from a finished one, so
+  // this waits for a full minute of no change, capped at four.
   let contracts = [];
   let stable = 0;
-  for (let i = 0; i < 60; i += 1) {
+  for (let i = 0; i < 80; i += 1) {
     const { body } = await api("/api/codify/contracts");
     const next = body.contracts ?? body ?? [];
     stable = next.length === contracts.length && next.length > 0 ? stable + 1 : 0;
     contracts = next;
-    if (stable >= 6) break;   // 18s without a new one
+    if (stable >= 20) break;   // 60s without a new one
     await sleep(3000);
   }
   mark("promotion: contracts exist", contracts.length >= 1, `${contracts.length} contracts after 1 run (${seedRun.error ?? seedRun.run?.status})`);
