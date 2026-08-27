@@ -94,8 +94,16 @@ afterEach(async () => {
  * local-process path came back empty — a promoted contract said "no egress,
  * workspace read-only" because nothing had been observed, not because the task
  * needed nothing. That is the design's central claim reading as a null result.
+ *
+ * The stand-in for Codex is a shell script, which `spawn` cannot execute on
+ * Windows — it fails with `EFTYPE` before the runner is reached. The platform
+ * targets Linux and the judging path is a container, but this project is
+ * developed on a Windows host, so the suite skips there rather than failing:
+ * a red `npm run check` on the machine the work happens on trains everyone to
+ * ignore it. The same reason `enforcement.integration.test.ts` skips without a
+ * container engine.
  */
-describe("host-process runner evidence", () => {
+describe.skipIf(process.platform === "win32")("host-process runner evidence", () => {
   it("reports the paths a turn wrote", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "launchpad-runner-"));
     temporaryDirectories.push(root);
