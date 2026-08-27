@@ -310,6 +310,10 @@ export class CodifyService {
     // Rank by confidence — each channel's score over its own threshold — so
     // contracts matched on different channels are still comparable.
     let best: { contract: TaskContract; match: MatchResult } | null = null;
+    // The second contract that also cleared its threshold. Where two governed
+    // tasks are neighbours, the failure mode is not a low score — it is two
+    // scores that are almost the same, and picking the larger is a coin flip.
+    let runnerUp: { contract: TaskContract; match: MatchResult } | null = null;
     let nearest: { contract: TaskContract; match: MatchResult } | null = null;
     // Contracts that came close without clearing. A prompt that combines a
     // governed task with something else scores under every line — compounding
@@ -336,9 +340,35 @@ export class CodifyService {
         }
         continue;
       }
-      if (!best || match.confidence > best.match.confidence) best = { contract, match };
+      if (!best || match.confidence > best.match.confidence) {
+        runnerUp = best;
+        best = { contract, match };
+      } else if (!runnerUp || match.confidence > runnerUp.match.confidence) {
+        runnerUp = { contract, match };
+      }
     }
     near.sort((left, right) => right.score - left.score);
+
+    /*
+     * Decline to choose between two contracts that scored the same.
+     *
+     * Taking the larger of 0.81 and 0.80 is a coin flip dressed as a decision,
+     * and the cost of losing it is a specialist briefed for its sibling's job.
+     * Abstaining routes into the ordinary unmatched path — ad hoc, observed,
+     * and on a specialist still bound to its own scope — so this can only ever
+     * *withhold* a brief. It never widens what a run may reach.
+     */
+    let tie: { contract: TaskContract; match: MatchResult } | null = null;
+    if (
+      best &&
+      runnerUp &&
+      this.config.codifyTieMargin > 0 &&
+      runnerUp.contract.id !== best.contract.id &&
+      best.match.confidence - runnerUp.match.confidence < this.config.codifyTieMargin
+    ) {
+      tie = runnerUp;
+      best = null;
+    }
 
     const base = {
       id: randomUUID(),
@@ -415,8 +445,15 @@ export class CodifyService {
             }
           : {}),
         ...(near.length > 0 ? { nearMatches: near } : {}),
-        reason:
-          contracts.length === 0
+        reason: tie
+          ? 'Two governed tasks scored within ' +
+            this.config.codifyTieMargin +
+            ' of each other — "' +
+            (nearest?.contract.name ?? "") +
+            '" and "' +
+            tie.contract.name +
+            '". Declining to guess which, so this runs ad hoc and is observed.'
+          : contracts.length === 0
             ? "No active contract exists yet; observing this run to learn from it."
             : near.length > 0
               ? "Nothing cleared its threshold, but " +
@@ -996,7 +1033,11 @@ export class CodifyService {
     // Clustered under the same rule routing uses, so a promoted cluster is
     // exactly a cluster that will later match. The lexical channel alone split
     // real usage into singletons and nothing ever cleared the occurrence floor.
-    const groups = clusterByMatch(eligible, this.defaultThresholds());
+    const groups = clusterByMatch(
+      eligible,
+      this.defaultThresholds(),
+      this.config.codifyClusterLinkage,
+    );
     const capabilityByRun = new Map(
       database.capabilityObservations.map((entry) => [entry.runId, entry]),
     );
@@ -1384,7 +1425,11 @@ export class CodifyService {
       const feedback = database.feedbackObservations.filter(
         (entry) => entry.contractId === contractId && entry.fingerprint,
       );
-      for (const members of clusterByMatch(feedback, this.defaultThresholds())) {
+      for (const members of clusterByMatch(
+        feedback,
+        this.defaultThresholds(),
+        this.config.codifyClusterLinkage,
+      )) {
         const distinctUsers = new Set(members.map((member) => member.userId)).size;
         if (distinctUsers < this.config.codifyMinRefinementUsers) continue;
         proposals.push({

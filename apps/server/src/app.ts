@@ -252,6 +252,38 @@ export async function createApp(
     return reply.code(202).send(result);
   });
 
+  /*
+   * Clearing your own conversation is neither a read nor a governance
+   * decision, so it is not gated on `CODIFY_OPERATORS` — but it is scoped to
+   * the calling principal, who is the only person it may affect.
+   */
+  /*
+   * Read-only, on purpose. There is no write or upload counterpart: staging
+   * bytes into a workspace belongs to a deployment, and an ingress would itself
+   * need governing. See `docs/CODIFY.md` §11.
+   */
+  app.get("/api/agents/:id/workspace", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    return service.listWorkspace(id, principal(request, config.codifyDefaultUser));
+  });
+
+  app.get("/api/agents/:id/workspace/file", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    const { path: relative } = z
+      .object({ path: z.string().min(1).max(1024) })
+      .parse(request.query);
+    return service.readWorkspaceFile(
+      id,
+      principal(request, config.codifyDefaultUser),
+      relative,
+    );
+  });
+
+  app.post("/api/agents/:id/session/reset", async (request) => {
+    const { id } = agentIdParams.parse(request.params);
+    return service.resetSession(id, principal(request, config.codifyDefaultUser));
+  });
+
   app.get("/api/runs/:id", async (request) => {
     const { id } = runIdParams.parse(request.params);
     return { run: service.getRun(id) };

@@ -230,6 +230,38 @@ export class AgentService {
     return database.agents.find((agent) => agent.id === previous.executedByAgentId) ?? null;
   }
 
+  /**
+   * The workspace as it stands, so a reviewer can look at the artefact.
+   *
+   * Not scoped by principal: a workspace is per-Agent, and everyone routed to a
+   * specialist shares it. What is per-principal is the *conversation*, which is
+   * why `getMessages` takes a userId and this does not.
+   */
+  async listWorkspace(agentId: string, userId: string) {
+    this.getAgent(agentId);
+    // Scoped to the caller, like the transcript. A principal who has not run
+    // yet has no workspace, and an empty listing is the honest answer.
+    return { files: await this.workspaces.list(this.workspaces.workspacePathFor(agentId, userId)) };
+  }
+
+  async readWorkspaceFile(agentId: string, userId: string, relative: string) {
+    this.getAgent(agentId);
+    try {
+      return await this.workspaces.read(
+        this.workspaces.workspacePathFor(agentId, userId),
+        relative,
+      );
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : String(cause);
+      // A traversal attempt and a typo both end here; neither is a server fault.
+      // Neither is told where the workspace lives either: an `ENOENT` carries
+      // the absolute path, and handing the caller the server's directory layout
+      // is a disclosure this project has no reason to make.
+      if (message.includes("outside")) throw new HttpError(400, message);
+      throw new HttpError(404, "No such file in this workspace: " + relative);
+    }
+  }
+
   getMessages(agentId: string, userId?: string): Message[] {
     this.getAgent(agentId);
     return this.store
@@ -242,6 +274,61 @@ export class AgentService {
             message.userId === userId),
       )
       .sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+  }
+
+  /**
+   * Start this principal's conversation over, on one Agent.
+   *
+   * A long Codex thread degrades in a way that reads as success: a specialist
+   * carrying twenty-six turns reported writing a file it had not written, five
+   * times running, because it was answering from the memory of having done the
+   * task before. Routing already starts a recognised task on a fresh thread for
+   * exactly that reason, but an operator sitting in one conversation had no way
+   * to say "start over" short of deleting the Agent.
+   *
+   * What this does NOT touch is the point. Observations, contracts, denials,
+   * spans and feedback are records of what *ran*; they are keyed by run, not by
+   * thread, and clearing a transcript does not un-run the work behind them. So
+   * a reset never changes a promotion decision, and it is not itself a prompt —
+   * nothing here writes a `PromptObservation`.
+   *
+   * The thread and the transcript are cleared together on purpose: leaving the
+   * messages would show a conversation the model is no longer in, which is the
+   * defect `getMessages` was keyed by principal to fix.
+   */
+  async resetSession(agentId: string, userId: string): Promise<{ agent: Agent; clearedMessages: number }> {
+    const agent = this.getAgent(agentId);
+    if (agent.status === "busy") {
+      throw new HttpError(409, "This Agent is running; stop or await the run before resetting");
+    }
+
+    let clearedMessages = 0;
+    const updated = await this.store.mutate((database) => {
+      const stored = database.agents.find((entry) => entry.id === agentId);
+      if (!stored) throw new HttpError(404, "Agent not found");
+
+      if (stored.codexThreads) {
+        delete stored.codexThreads[userId];
+      } else {
+        // A store written before threads were keyed by principal holds one
+        // shared thread, adopted by whoever arrived first. Clearing it here is
+        // the only reading available: there is nothing recording whose it was.
+        stored.codexThreadId = null;
+      }
+
+      const before = database.messages.length;
+      // Only messages explicitly stamped with this principal. A legacy record
+      // carries no `userId` and is visible to everyone, so deleting it here
+      // would be one principal erasing another's history.
+      database.messages = database.messages.filter(
+        (message) => !(message.agentId === agentId && message.userId === userId),
+      );
+      clearedMessages = before - database.messages.length;
+
+      return structuredClone(stored);
+    });
+
+    return { agent: updated, clearedMessages };
   }
 
   getRun(runId: string): AgentRun {
@@ -1039,9 +1126,12 @@ export class AgentService {
       if (this.cancellationRequests.has(agentAtStart.id)) {
         throw new RunCancelledError();
       }
+      // One workspace per principal, created on this person's first run. The
+      // Agent is shared; the directory it works in is not.
+      const workspacePath = await this.workspaces.ensureFor(agentAtStart, context.userId);
       const result = await this.runner.run({
         agentId: agentAtStart.id,
-        workspacePath: agentAtStart.workspacePath,
+        workspacePath,
         // The Agent is the intended recipient of the raw prompt; the store is
         // not. This is the only place the unredacted text is used.
         prompt: context.rawPrompt,

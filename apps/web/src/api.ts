@@ -99,6 +99,19 @@ export const api = {
     request<{ messages: Message[] }>("/api/agents/" + id + "/messages"),
   runs: (id: string) =>
     request<{ runs: AgentRun[] }>("/api/agents/" + id + "/runs"),
+  workspace: (id: string) =>
+    request<{ files: { path: string; size: number; modifiedAt: string }[] }>(
+      "/api/agents/" + id + "/workspace",
+    ),
+  workspaceFile: (id: string, file: string) =>
+    request<{ path: string; content: string; size: number; truncated: boolean }>(
+      "/api/agents/" + id + "/workspace/file?path=" + encodeURIComponent(file),
+    ),
+  resetSession: (id: string) =>
+    request<{ agent: Agent; clearedMessages: number }>(
+      "/api/agents/" + id + "/session/reset",
+      { method: "POST" },
+    ),
   sendMessage: (id: string, content: string, forceAdHoc = false) =>
     request<{
       run: AgentRun;

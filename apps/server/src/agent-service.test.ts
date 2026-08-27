@@ -25,6 +25,19 @@ class FakeRunner implements AgentRunner {
   }
 }
 
+/** Never resolves, so the Agent stays `busy` while a test looks at it. */
+class StallingRunner implements AgentRunner {
+  async run(): Promise<RunnerResult> {
+    return new Promise<RunnerResult>(() => {});
+  }
+  async cancel(): Promise<boolean> {
+    return true;
+  }
+  async isAvailable(): Promise<boolean> {
+    return true;
+  }
+}
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -140,6 +153,81 @@ describe("Agent lifecycle", () => {
     // An operator asking for no particular principal still sees the whole
     // Agent, which is what the governance views rely on.
     expect(service.getMessages(agent.id)).toHaveLength(4);
+  });
+
+  it("resets only the calling principal's thread and transcript", async () => {
+    const service = await makeService();
+    const agent = await service.createAgent({ name: "Shared specialist" });
+
+    const alice = await service.sendMessage(agent.id, "alice question", { userId: "user-a" });
+    await expect.poll(() => service.getRun(alice.run.id).status).toBe("completed");
+    const bob = await service.sendMessage(agent.id, "bob question", { userId: "user-b" });
+    await expect.poll(() => service.getRun(bob.run.id).status).toBe("completed");
+
+    expect(service.getAgent(agent.id).codexThreads?.["user-a"]).toBeDefined();
+    expect(service.getAgent(agent.id).codexThreads?.["user-b"]).toBeDefined();
+
+    const result = await service.resetSession(agent.id, "user-a");
+    expect(result.clearedMessages).toBe(2);
+
+    // Gone for user-a: no thread to resume, no transcript to display.
+    expect(service.getAgent(agent.id).codexThreads?.["user-a"]).toBeUndefined();
+    expect(service.getMessages(agent.id, "user-a")).toHaveLength(0);
+
+    // Untouched for everyone else. One principal clearing their own
+    // conversation must never reach into another's.
+    expect(service.getAgent(agent.id).codexThreads?.["user-b"]).toBeDefined();
+    expect(service.getMessages(agent.id, "user-b")).toHaveLength(2);
+  });
+
+  it("leaves the governance record untouched when a session is reset", async () => {
+    const { service, store } = await makeServiceWithStore();
+    const agent = await service.createAgent({ name: "Observed" });
+
+    const { run } = await service.sendMessage(agent.id, "summarise the incident timeline", {
+      userId: "user-a",
+    });
+    await expect.poll(() => service.getRun(run.id).status).toBe("completed");
+
+    const before = store.snapshot();
+    const prompts = before.promptObservations.length;
+    const capabilities = before.capabilityObservations.length;
+    expect(prompts).toBeGreaterThan(0);
+
+    await service.resetSession(agent.id, "user-a");
+
+    // The transcript is gone; the record of what ran is not. Observations are
+    // keyed by run, not by thread — clearing a conversation does not un-run the
+    // work behind it, so a reset can never change a promotion decision.
+    const after = store.snapshot();
+    expect(service.getMessages(agent.id, "user-a")).toHaveLength(0);
+    expect(after.promptObservations).toHaveLength(prompts);
+    expect(after.capabilityObservations).toHaveLength(capabilities);
+    expect(after.runs.some((entry) => entry.id === run.id)).toBe(true);
+  });
+
+  it("does not record the reset itself as a prompt", async () => {
+    const { service, store } = await makeServiceWithStore();
+    const agent = await service.createAgent({ name: "Observed" });
+    const { run } = await service.sendMessage(agent.id, "do the thing", { userId: "user-a" });
+    await expect.poll(() => service.getRun(run.id).status).toBe("completed");
+
+    const prompts = store.snapshot().promptObservations.length;
+    await service.resetSession(agent.id, "user-a");
+    await service.resetSession(agent.id, "user-a");
+
+    // Clearing a conversation is not a request, so it never becomes evidence
+    // that a task recurs. Two resets in a row add nothing.
+    expect(store.snapshot().promptObservations).toHaveLength(prompts);
+  });
+
+  it("refuses to reset an Agent with a turn in flight", async () => {
+    const service = await makeService(new StallingRunner());
+    const agent = await service.createAgent({ name: "Busy" });
+    await service.sendMessage(agent.id, "long job", { userId: "user-a" });
+    await expect.poll(() => service.getAgent(agent.id).status).toBe("busy");
+
+    await expect(service.resetSession(agent.id, "user-a")).rejects.toThrow(/running/i);
   });
 
   it("keeps pre-existing messages visible after userId was introduced", async () => {

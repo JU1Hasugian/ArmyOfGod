@@ -54,15 +54,16 @@ async function makeService(overrides: Record<string, string> = {}) {
   });
   const store = new JsonStore(path.join(root, "data", "db.json"));
   const codify = new CodifyService(config, store);
+  const workspaces = new WorkspaceManager(path.join(root, "workspaces"));
   const service = new AgentService(
     config,
     store,
-    new WorkspaceManager(path.join(root, "workspaces")),
+    workspaces,
     new InstantRunner(),
     codify,
   );
   await service.initialize();
-  return { service, codify, store, config };
+  return { service, codify, store, config, workspaces };
 }
 
 async function settle(service: AgentService, runId: string): Promise<void> {
@@ -157,8 +158,16 @@ describe("Codify refinement from repeated corrections", () => {
     ]);
     expect(context.codify.getContract(contract.id).status).toBe("deprecated");
 
-    // And the specialist actually runs with it: AGENTS.md is what the Runtime reads.
-    const brief = await readFile(path.join(agent.workspacePath, "AGENTS.md"), "utf8");
+    // And the specialist actually runs with it: AGENTS.md is what the Runtime
+    // reads. Workspaces are per-principal and seeded on first run, so this also
+    // pins the harder case — a rule approved *before* anybody ran still reaches
+    // the workspace created afterwards, because the brief is regenerated from
+    // the Agent record rather than copied once.
+    const workspace = await context.workspaces.ensureFor(
+      context.service.getAgent(agent.id),
+      "user-newcomer",
+    );
+    const brief = await readFile(path.join(workspace, "AGENTS.md"), "utf8");
     expect(brief).toContain("Learned from repeated user corrections");
     expect(brief).toContain("colourful palette");
   });
