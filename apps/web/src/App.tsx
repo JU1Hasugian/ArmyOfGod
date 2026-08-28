@@ -583,6 +583,24 @@ export default function App() {
     }
   }, []);
 
+  /*
+   * Stable across renders, and it has to be.
+   *
+   * `Governance` rebuilds its `refresh` whenever this prop changes and runs it
+   * from an effect keyed on that callback. Passed as an inline arrow it was a
+   * new function on every render, so refreshing wrote state here, which
+   * re-rendered, which produced a new callback, which refreshed again - a loop
+   * that hammered `/api/agents` until the browser started refusing the
+   * requests, and left the governance view showing zeros for anyone whose
+   * first paint lost that race.
+   */
+  const handleGovernanceChanged = useCallback(() => {
+    void refreshAgents();
+    // A governance pass can supersede a contract, not just add an Agent - the
+    // rail's version label is derived from these.
+    void refreshContracts();
+  }, [refreshAgents, refreshContracts]);
+
   const bootstrap = useCallback(async () => {
     await Promise.all([refreshAgents(), api.system().then(setSystem), refreshContracts()]);
   }, [refreshAgents, refreshContracts]);
@@ -1080,12 +1098,7 @@ export default function App() {
         {view === "governance" ? (
           <Governance
             onError={setError}
-            onAgentsChanged={() => {
-              void refreshAgents();
-              // A governance pass can supersede a contract, not just add an
-              // Agent — the rail's version label is derived from these.
-              void refreshContracts();
-            }}
+            onAgentsChanged={handleGovernanceChanged}
             isOperator={system?.isOperator === true}
             principal={principal}
           />
