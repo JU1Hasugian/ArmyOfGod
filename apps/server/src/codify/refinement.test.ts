@@ -18,6 +18,15 @@ import { WorkspaceManager } from "../workspace.js";
 import { composeBrief } from "./service.js";
 import { CodifyService } from "./service.js";
 
+/*
+ * `autoApplyRefinements` gates on `reviewRule`, which asks a model and fails
+ * closed to "review" without one — so the branch that actually applies cannot
+ * be reached offline. That is how it came to discard the composed brief
+ * unnoticed. The test below runs only with credentials; run it before trusting
+ * a change to the automatic path.
+ */
+const LIVE = Boolean(process.env.ARK_API_KEY && process.env.ARK_MODEL);
+
 class InstantRunner implements AgentRunner {
   async run(request: RunnerRequest): Promise<RunnerResult> {
     return { output: "done", threadId: request.threadId ?? "thread-1", usage: null };
@@ -214,6 +223,46 @@ describe("Codify refinement from repeated corrections", () => {
     expect(brief).toContain("colourful palette");
     expect(contract.version).toBeGreaterThan(0);
   });
+
+  it.skipIf(!LIVE)(
+    "writes an auto-applied rule into the Agent's brief",
+    { timeout: 120_000 },
+    async () => {
+      // The harness pins a fake key so the offline tests stay deterministic;
+      // this one needs the real endpoint, because the guard is a model call.
+      const context = await makeService({
+        CODIFY_AUTO_REFINE: "true",
+        // `reviewRule` goes through the drafting gate, so the guard is only
+        // reachable with it on. Off, it reports the reviewer as unreachable.
+        CODIFY_LLM_DRAFTING: "true",
+        ARK_API_KEY: process.env.ARK_API_KEY as string,
+        ARK_MODEL: process.env.ARK_MODEL as string,
+        ...(process.env.ARK_BASE_URL ? { ARK_BASE_URL: process.env.ARK_BASE_URL } : {}),
+      });
+      const { agent } = await promote(context);
+      const workspace = await context.workspaces.ensureFor(
+        context.service.getAgent(agent.id),
+        "user-early",
+      );
+
+      await taskThenCorrection(context, agent.id, "user-a", "Please use more colour in the slides");
+      await taskThenCorrection(context, agent.id, "user-b", "please use more colour in the slides");
+      await context.codify.refreshRefinements();
+
+      // The path the demo uses: nobody opens the queue. It has to reach the
+      // Agent record *and* the workspace brief the Runtime reads.
+      const outcome = await context.codify.autoApplyRefinements((agentId, instructions) =>
+        context.service.applyBriefToAgent(agentId, instructions),
+      );
+      expect(outcome.applied.length, JSON.stringify(outcome.heldForReview)).toBeGreaterThan(0);
+      expect(context.service.getAgent(agent.id).instructions).toContain("colour");
+
+      await context.workspaces.ensureFor(context.service.getAgent(agent.id), "user-early");
+      const brief = await readFile(path.join(workspace, "AGENTS.md"), "utf8");
+      expect(brief).toContain("Learned from repeated user corrections");
+      expect(brief).toContain("colour");
+    },
+  );
 
   it("routes later turns to the refined version of the contract", async () => {
     const context = await makeService();

@@ -841,7 +841,11 @@ not a reason to allow it.
 span named `denied ab.chatgpt.com` carrying `status: denied`; a *path* refusal
 does not get a span of its own, and is read from **Denials** instead.
 
-**Do:** run `npm run check` on camera — 277 passing, 5 skipped (282 total).
+**Do:** run `npm run check` on camera — 277 passing, 7 skipped (284 total).
+> The skipped seven are the live-endpoint tests. They are skipped because
+> `npm run check` does not carry credentials, not because they do not run: with
+> `ARK_API_KEY` and `ARK_MODEL` set they pass, and two of them cover paths that
+> cannot be reached offline at all.
 
 **Do:** state one limitation out loud. This one:
 
