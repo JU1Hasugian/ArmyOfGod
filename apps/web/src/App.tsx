@@ -1234,6 +1234,7 @@ export default function App() {
                       try {
                         await api.resetSession(selected.id);
                         setMessages([]);
+                        setActiveRun(null);
                         setSplitSession(null);
                         setDelegationNotice(null);
                         await refreshAgents();
