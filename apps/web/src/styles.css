@@ -1345,8 +1345,9 @@ textarea:focus {
 
 .governance {
   padding: 28px 32px 60px;
-  overflow-y: auto;
   max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
 }
 
 .governance-header {
@@ -2434,7 +2435,7 @@ textarea:focus {
      the conversation out of the card on a short viewport. */
   flex: 0 1 auto;
   min-height: 0;
-  max-height: min(38vh, 320px);
+  max-height: min(72vh, 680px);
   overflow: auto;
   background: #ffffff;
   border: 1px solid var(--line, #e0ded6);
@@ -2453,7 +2454,7 @@ textarea:focus {
   display: grid;
   grid-template-columns: minmax(210px, 38%) 1fr;
   gap: 12px;
-  max-height: 52vh;
+  max-height: 64vh;
 }
 
 .workspace-list {
