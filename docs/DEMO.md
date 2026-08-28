@@ -276,6 +276,12 @@ OBSERVE   No contract matched · observed, not enforced
 
 **Expect:** the card from Shot 1.1 is sitting there, next to two others.
 
+> Opening this page is what promotes them. Detection runs as each turn settles,
+> and the five ad-hoc runs typically leave one contract promoted, not three; the
+> page's own rescan on load brings the other two through. So open governance and
+> let it settle for a second before you start narrating — do not cut from the
+> fifth run straight into a count.
+
 **Say:**
 
 > *"Codify was watching every one of those. And not just those five — twelve
@@ -412,6 +418,12 @@ file you did not capture is a file you have to re-run for.
 governed outputs say different things: different releases, different commits,
 different lengths. What is identical is the **shape** — the same headings, in
 the same order, with the same conventions.
+
+Point at the right level. Measured across three governed runs: `# Release Notes`
+then `## <version>` — which *differs*, because each asked about a different
+release — then `### Added` · `### Changed` · `### Fixed` · `### Removed` ·
+`### Security`, identical and in that order every time. The invariant is at
+level 3; the level-2 heading is the one thing that is supposed to vary.
 
 - **Five** ad-hoc runs → five different structures. Different headings, different
   ordering, different level of detail.
@@ -824,9 +836,14 @@ not a reason to allow it.
 > read. The platform is in exactly the state it was, and nothing about it became
 > harder to understand along the way."*
 
-> **If you are short on time, cut 6b.2 and keep 6b.1 and 6b.3.** The revoke and
-> the evidence-backed restore are the two halves that matter; the run in between
-> is the proof and can be described instead of shown.
+> [!IMPORTANT]
+> **Do not cut 6b.2.** An earlier draft said you could. You cannot: denials are
+> keyed to a contract *id*, and revoking supersedes the contract, so the moment
+> after 6b.1 the new version has no recorded denials of its own. Open the
+> escalation panel then and it has nothing to show you. The run in 6b.2 is what
+> puts a refusal on the new version - measured: empty immediately after the
+> revoke, `ab.chatgpt.com x1` after one governed run. Revoke, run, then
+> escalate, in that order.
 
 ---
 
@@ -835,7 +852,8 @@ not a reason to allow it.
 
 **Do:** click **Show trace** on the governed run.
 
-**Expect:** one trace id and roughly 18 spans nested under the turn —
+**Expect:** one trace id and somewhere between 18 and 30 spans nested under the
+turn — the count moves with how many model calls the turn took —
 `ORCHESTRATION` ×2 → `POLICY_DECISION` → `BUDGET_CHECK` → `DELEGATION` →
 `SANDBOX_EXECUTION` → `MODEL_CALL` ×n → `EGRESS`. An egress refusal appears as a
 span named `denied ab.chatgpt.com` carrying `status: denied`; a *path* refusal
