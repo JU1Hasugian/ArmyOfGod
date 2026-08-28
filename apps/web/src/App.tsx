@@ -434,10 +434,29 @@ function RunEvidence({ run, enforcing }: { run: AgentRun; enforcing: boolean }) 
           </span>
         </div>
       )}
+      {/*
+        Name what was refused.
+
+        This said "{n} denied — blocked at the broker" and stopped there. Beside a
+        run that had just answered correctly, the only noun in the sentence was
+        the run itself, so it read as "your run was blocked" — the opposite of
+        what happened. What was blocked is a call the Agent made on its own to
+        somewhere its contract does not allow, and saying so turns the most
+        alarming line on the card into the most convincing one.
+      */}
       {codify.denials > 0 && (
         <div className="evidence-denial">
-          <strong>{codify.denials} denied</strong> — blocked at the broker. The target was
-          never contacted.
+          <strong>
+            {codify.denials} {codify.denials === 1 ? "call" : "calls"} refused
+          </strong>{" "}
+          — the run finished; these targets were never contacted:{" "}
+          {codify.deniedTargets && codify.deniedTargets.length > 0 ? (
+            codify.deniedTargets.map((denial) => (
+              <code key={denial.kind + ":" + denial.target}>{denial.target}</code>
+            ))
+          ) : (
+            <em>target not recorded</em>
+          )}
         </div>
       )}
       <RunTraceView runId={run.id} />
@@ -478,6 +497,13 @@ export default function App() {
   const [authInput, setAuthInput] = useState("");
   const messageEnd = useRef<HTMLDivElement>(null);
   const selectedIdRef = useRef<string | null>(null);
+  /*
+   * Who the page is signed in as, readable from async work that started before
+   * a switch. A poll loop outlives the turn that began it, so it has to be able
+   * to ask whether its answer is still addressed to the person on screen.
+   */
+  const principalRef = useRef(principal);
+  principalRef.current = principal;
   const mountedRef = useRef(true);
   const pollingRunIds = useRef(new Set<string>());
   selectedIdRef.current = selectedId;
@@ -541,18 +567,25 @@ export default function App() {
     }
   }, []);
 
+  /*
+   * The contract catalogue behind the sidebar's specialist labels.
+   *
+   * Separated from `bootstrap` because it is not only a start-up concern: a
+   * refinement that applies itself supersedes a contract while the page is
+   * open, and the version in the rail has to follow. It used to load once, so
+   * governance said v2 while the specialist beside it still said v1.
+   */
+  const refreshContracts = useCallback(async () => {
+    try {
+      setContracts((await api.contracts()).contracts);
+    } catch {
+      /* Governance is optional; the catalogue simply stays flat. */
+    }
+  }, []);
+
   const bootstrap = useCallback(async () => {
-    await Promise.all([
-      refreshAgents(),
-      api.system().then(setSystem),
-      api
-        .contracts()
-        .then((result) => setContracts(result.contracts))
-        .catch(() => {
-          /* Governance is optional; the catalogue simply stays flat. */
-        }),
-    ]);
-  }, [refreshAgents]);
+    await Promise.all([refreshAgents(), api.system().then(setSystem), refreshContracts()]);
+  }, [refreshAgents, refreshContracts]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -597,6 +630,38 @@ export default function App() {
       );
   }, [refreshMessages, selectedId, principal]);
 
+  /*
+   * Signing in as someone else.
+   *
+   * The transcript and the workspace listing are keyed by principal, so both
+   * follow the switch on their own. The banners did not: they are notices about
+   * *a run*, and a run belongs to the person who started it. Switching user left
+   * "Routed to a specialist" sitting above a conversation the new person had
+   * never had, addressed to a handoff they did not cause, and the only way out
+   * was the dismiss button — so it stayed on screen through a demo.
+   *
+   * Cleared here rather than in an effect on `principal`, because an effect
+   * would also fire on the first render and on a remount, and there is nothing
+   * to dismiss then.
+   */
+  const switchPrincipal = (next: string) => {
+    setPrincipalState(next);
+    principalRef.current = next;
+    setPrincipal(next);
+    setDelegationNotice(null);
+    setSplitSession(null);
+    setError(null);
+    /*
+     * A run belongs to whoever started it. These held the last run and its
+     * evidence regardless of who was signed in, so switching to a principal
+     * with no history at all still showed the previous person's failure and
+     * their routing decision under the new name. The transcript was already
+     * keyed by principal; this is the rest of the same context.
+     */
+    setActiveRun(null);
+    setRunsById({});
+  };
+
   // Whether you may decide governance depends on who you are signed in as, and
   // the backend is the authority on that — so re-ask it when the principal
   // changes rather than inferring it in the client.
@@ -619,8 +684,16 @@ export default function App() {
     }
   }, [selected]);
 
+  /*
+   * Keep the newest turn in view, and *only* the transcript.
+   *
+   * `scrollIntoView` walks every scrollable ancestor, so with a fixed shell it
+   * would drag the whole app up to satisfy the request. `block: "nearest"`
+   * scrolls the minimum needed, which is the messages column - belt and braces
+   * with the `overflow: clip` that stops the shell being scrollable at all.
+   */
   useEffect(() => {
-    messageEnd.current?.scrollIntoView({ behavior: "smooth" });
+    messageEnd.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [messages, activeRun]);
 
   const createAgent = async (event: React.FormEvent) => {
@@ -694,12 +767,19 @@ export default function App() {
   const pollRun = async (runId: string, agentId: string) => {
     if (pollingRunIds.current.has(runId)) return;
     pollingRunIds.current.add(runId);
+    // The principal this run belongs to. A poll loop can outlive a switch, and
+    // the Agent check alone does not catch that: the Agent is shared, the
+    // conversation is not.
+    const startedAs = principalRef.current;
     try {
       while (mountedRef.current) {
         await new Promise((resolve) => window.setTimeout(resolve, 900));
         if (!mountedRef.current) return;
+        if (principalRef.current !== startedAs) return;
         const result = await api.run(runId);
-        if (selectedIdRef.current === agentId) setActiveRun(result.run);
+        if (selectedIdRef.current === agentId && principalRef.current === startedAs) {
+          setActiveRun(result.run);
+        }
         if (!["queued", "running"].includes(result.run.status)) {
           await Promise.all([refreshMessages(agentId), refreshAgents()]);
           return;
@@ -867,10 +947,7 @@ export default function App() {
           <span className="eyebrow">Signed in as</span>
           <select
             value={principal}
-            onChange={(event) => {
-              setPrincipalState(event.target.value);
-              setPrincipal(event.target.value);
-            }}
+            onChange={(event) => switchPrincipal(event.target.value)}
           >
             {PRINCIPALS.map((user) => (
               <option key={user} value={user}>
@@ -882,6 +959,7 @@ export default function App() {
 
         <button
           className="button button-primary create-button"
+          title="Create Agent"
           onClick={() => {
             setForm(emptyForm);
             setShowCreate(true);
@@ -893,6 +971,7 @@ export default function App() {
 
         <button
           className={"button nav-button " + (view === "governance" ? "nav-active" : "")}
+          title="Codify governance"
           onClick={() => setView((current) => (current === "governance" ? "playground" : "governance"))}
         >
           <span>⛨</span> Codify governance
@@ -1001,7 +1080,12 @@ export default function App() {
         {view === "governance" ? (
           <Governance
             onError={setError}
-            onAgentsChanged={() => void refreshAgents()}
+            onAgentsChanged={() => {
+              void refreshAgents();
+              // A governance pass can supersede a contract, not just add an
+              // Agent — the rail's version label is derived from these.
+              void refreshContracts();
+            }}
             isOperator={system?.isOperator === true}
             principal={principal}
           />

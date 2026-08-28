@@ -33,6 +33,36 @@ describe("telling a follow-up from a new request", () => {
     expect(verdict.reason).toContain("target");
   });
 
+  it("reads a hedged correction as a follow-up however long it runs", () => {
+    // The politeness is what makes these long, so length cannot be the test:
+    // every one of these is the same instruction as "bigger, bolder heading".
+    for (const text of [
+      "i think the heading needs to be more bigger and bolder for the release note",
+      "the release note heading should be bigger and bolder than it is now",
+      "could you possibly make that heading a fair bit larger and put it in bold",
+    ]) {
+      expect(looksLikeFollowUp(text).followUp, text).toBe(true);
+    }
+  });
+
+  it("reads a creation verb as new work even when it carries a pronoun", () => {
+    const verdict = looksLikeFollowUp(
+      "Draft a birthday message for a colleague in accounting and send it round the team",
+    );
+    expect(verdict.followUp).toBe(false);
+    expect(verdict.reason).toContain("does not exist yet");
+  });
+
+  it("keeps a creation verb a correction when it asks for an adjustment", () => {
+    // Remaking an artefact differently is not asking for a new one.
+    for (const text of [
+      "write it shorter than that but keep the second paragraph exactly as it is",
+      "rewrite the opening section so it reads a little less formally than before",
+    ]) {
+      expect(looksLikeFollowUp(text).followUp, text).toBe(true);
+    }
+  });
+
   it("does not treat a long unrelated request as a correction", () => {
     const verdict = looksLikeFollowUp(
       "Write a detailed proposal for the new onboarding process covering the first " +

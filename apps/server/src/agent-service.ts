@@ -5,7 +5,7 @@ import { agentCodexHome, isArkConfigured, isCodifyActive } from "./config.js";
 import { reapOrphanedBrokers } from "./codify/broker-session.js";
 import { RunTracer } from "./codify/trace.js";
 import { waves } from "./codify/planner.js";
-import { looksLikeFollowUp } from "./codify/continuity.js";
+import { classifyFollowUp } from "./codify/continuity.js";
 import type { CoordinationSession } from "./codify/coordination.js";
 import type { CodifyService } from "./codify/service.js";
 import type { CapabilityScope, RouteDecision, TaskContract } from "./codify/types.js";
@@ -63,7 +63,32 @@ function resumeThread(
 }
 
 export class AgentService {
+  /*
+   * In-flight executions, keyed by Agent *and* principal.
+   *
+   * A promoted specialist is shared by everyone routed to it, and everything
+   * that makes a turn — the workspace, the transcript, the Codex thread, the
+   * run record — is already per principal. Keying this by Agent alone was the
+   * last thing that was not, and it is what made one person's run return
+   * "This Agent is already running" to everybody else on the same specialist.
+   */
   private readonly activeExecutions = new Map<string, Promise<void>>();
+
+  /*
+   * The post-run governance pass, serialised.
+   *
+   * Detection reads the candidate queue and then writes contracts, so two runs
+   * settling at the same moment both saw "no contract for this task yet" and
+   * both promoted one. Five concurrent runs produced nine contracts for three
+   * tasks, differing only in the capitalisation the drafter happened to choose.
+   * Runs are concurrent by design now; the pass that turns their evidence into
+   * policy is the one place that must not be.
+   */
+  private governancePass: Promise<void> = Promise.resolve();
+
+  private static executionKey(agentId: string, userId: string): string {
+    return agentId + "::" + userId;
+  }
   private readonly cancellationRequests = new Set<string>();
 
   constructor(
@@ -136,6 +161,31 @@ export class AgentService {
     await this.workspaces.create(agent);
     await this.store.mutate((database) => database.agents.push(agent));
     return agent;
+  }
+
+  /**
+   * Write a learned brief onto a specialist, without the human edit guard.
+   *
+   * `updateAgent` refuses while a run is in flight, and it is right to: a person
+   * renaming an Agent or rewriting its instructions mid-turn changes what the
+   * turn is doing underneath itself. This is not that. The governance pass runs
+   * as a turn settles - often while another principal is still running on the
+   * same shared specialist - so routing it through the guarded path meant the
+   * write was refused, the refusal was swallowed by the pass, and the platform
+   * reported a rule as "applied" that no Agent had ever received.
+   *
+   * Safe where the guarded path is not, because the running turn already has
+   * its brief: `AGENTS.md` is composed into the workspace at launch, so a rule
+   * written now lands on the next run rather than mutating one in progress.
+   */
+  async applyBriefToAgent(id: string, instructions: string): Promise<Agent> {
+    return this.store.mutate((database) => {
+      const agent = database.agents.find((item) => item.id === id);
+      if (!agent) throw new HttpError(404, "Agent not found");
+      agent.instructions = instructions.trim();
+      agent.updatedAt = now();
+      return structuredClone(agent);
+    });
   }
 
   async updateAgent(id: string, input: UpdateAgentInput): Promise<Agent> {
@@ -345,10 +395,24 @@ export class AgentService {
    * Both, because delegation separates the two: the specialist owns the run,
    * the desk owns the thread it belongs to, and each view needs to see it.
    */
-  getRuns(agentId: string): AgentRun[] {
+  /**
+   * The runs for one conversation, scoped to who is asking.
+   *
+   * `userId` is optional so internal callers can still see every run, but the
+   * route passes it: a run belongs to the principal who started it, and the
+   * evidence panel beside the transcript has to agree with the transcript.
+   */
+  getRuns(agentId: string, userId?: string): AgentRun[] {
     this.getAgent(agentId);
-    return this.store
-      .snapshot()
+    const snapshot = this.store.snapshot();
+    // Runs written before `userId` existed carry no principal of their own.
+    // The message that started one does, so it answers for the run.
+    const ownedByCaller = new Set(
+      snapshot.messages
+        .filter((message) => message.userId === userId && message.runId)
+        .map((message) => message.runId as string),
+    );
+    return snapshot
       .runs.filter(
         (run) =>
           run.agentId === agentId ||
@@ -358,6 +422,11 @@ export class AgentService {
           // rather than losing the evidence for conversations already on disk.
           (run.conversationAgentId === undefined &&
             run.codify?.delegatedFromAgentId === agentId),
+      )
+      .filter(
+        (run) =>
+          userId === undefined ||
+          (run.userId === undefined ? ownedByCaller.has(run.id) : run.userId === userId),
       )
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
   }
@@ -420,14 +489,18 @@ export class AgentService {
     // correction to a governed answer then runs under that contract's
     // permissions instead of ad hoc on the general Agent, unrestricted.
     let routeAgentId = agentId;
-    let continuation: { agent: Agent; reason: string } | undefined;
+    let continuation: { agent: Agent; reason: string; channel: string } | undefined;
     if (this.codify.enabled) {
-      const verdict = looksLikeFollowUp(storedPrompt);
+      const verdict = await classifyFollowUp(this.config, storedPrompt);
       if (verdict.followUp) {
         const previous = this.lastResponder(conversationAgentId, userId);
         if (previous && previous.id !== agentId && previous.status === "ready") {
           routeAgentId = previous.id;
-          continuation = { agent: previous, reason: verdict.reason };
+          continuation = {
+            agent: previous,
+            reason: verdict.reason,
+            channel: verdict.channel ?? "lexical",
+          };
         }
       }
     }
@@ -442,6 +515,9 @@ export class AgentService {
           attributes: {
             agent: continuation.agent.name,
             why: continuation.reason,
+            // Which layer answered. A demo with the endpoint pulled shows
+            // "lexical" here rather than looking identical and being weaker.
+            how: continuation.channel,
           },
         });
       }
@@ -604,6 +680,7 @@ export class AgentService {
       id: runId,
       agentId: executionAgentId,
       ...(executionAgentId !== conversationAgentId ? { conversationAgentId } : {}),
+      userId,
       status: "queued",
       prompt: storedPrompt,
       output: null,
@@ -637,8 +714,18 @@ export class AgentService {
       if (storedAgent.status === "stopped") {
         throw new HttpError(409, "Start the Agent before sending a message");
       }
-      if (storedAgent.status === "busy") {
-        throw new HttpError(409, "This Agent is already running");
+      // Per principal, not per Agent. Two people using the same specialist at
+      // once is the ordinary case for a shared specialist; the same person
+      // sending twice before their first turn lands is the one to refuse,
+      // because the second would resume a thread the first is still using.
+      const alreadyRunning = database.runs.some(
+        (item) =>
+          item.agentId === executionAgentId &&
+          item.userId === userId &&
+          (item.status === "queued" || item.status === "running"),
+      );
+      if (alreadyRunning) {
+        throw new HttpError(409, "You already have a run in flight on this Agent");
       }
       database.runs.push(run);
       database.messages.push(message);
@@ -659,11 +746,12 @@ export class AgentService {
       ...(binding ? { binding } : {}),
       ...(decision ? { decision } : {}),
     });
-    this.activeExecutions.set(executionAgentId, execution);
+    const executionKey = AgentService.executionKey(executionAgentId, userId);
+    this.activeExecutions.set(executionKey, execution);
     void execution
       .finally(() => {
-        if (this.activeExecutions.get(executionAgentId) === execution) {
-          this.activeExecutions.delete(executionAgentId);
+        if (this.activeExecutions.get(executionKey) === execution) {
+          this.activeExecutions.delete(executionKey);
         }
       })
       .catch(() => undefined);
@@ -807,7 +895,9 @@ export class AgentService {
       // `sendMessage` returns as soon as the Run is queued; a session turn is
       // only over when the Run is. Awaiting the execution here is what makes a
       // turn a unit of work rather than a dispatch.
-      await this.activeExecutions.get(run.agentId)?.catch(() => undefined);
+      await this.activeExecutions
+        .get(AgentService.executionKey(run.agentId, run.userId ?? ""))
+        ?.catch(() => undefined);
       const settled = this.getRun(run.id);
       if (settled.status === "completed") {
         const output = settled.output ?? "";
@@ -1080,13 +1170,23 @@ export class AgentService {
         // that clears its thresholds is promoted without waiting for someone to
         // open the review queue. `autoPromote` is a no-op when the switch is off
         // or when the reviewer withholds its approval.
-        await this.codify.refreshCandidates();
-        await this.codify.autoPromote((agent) => this.createAgent(agent));
-        // The same pass for corrections: several people asking for the same
-        // change rewrites the brief without waiting for an operator, behind a
-        // guard that only signs presentation changes.
-        await this.codify.refreshRefinements();
-        await this.codify.autoApplyRefinements();
+        // Queued behind any pass already running, never skipped: this turn's
+        // evidence still has to be considered, just not at the same time as
+        // somebody else's.
+        this.governancePass = this.governancePass
+          .catch(() => undefined)
+          .then(async () => {
+            await this.codify.refreshCandidates();
+            await this.codify.autoPromote((agent) => this.createAgent(agent));
+            // The same pass for corrections: several people asking for the same
+            // change rewrites the brief without waiting for an operator, behind
+            // a guard that only signs presentation changes.
+            await this.codify.refreshRefinements();
+            await this.codify.autoApplyRefinements((agentId, instructions) =>
+              this.applyBriefToAgent(agentId, instructions),
+            );
+          });
+        await this.governancePass;
         // The broker's own JSONL is the source of truth for what happened at
         // the boundary; the trace only gives those facts an ordering and a
         // parent, so a reviewer reads one sequence instead of two logs.
@@ -1136,6 +1236,7 @@ export class AgentService {
       const workspacePath = await this.workspaces.ensureFor(agentAtStart, context.userId);
       const result = await this.runner.run({
         agentId: agentAtStart.id,
+        runId: run.id,
         workspacePath,
         // The Agent is the intended recipient of the raw prompt; the store is
         // not. This is the only place the unredacted text is used.
@@ -1167,7 +1268,16 @@ export class AgentService {
             ? { executedByAgentId: agent.id }
             : {}),
         });
-        agent.status = "ready";
+        // Another principal may still be running on this Agent; the badge has
+        // to describe the Agent, not just this turn.
+        agent.status = database.runs.some(
+          (item) =>
+            item.agentId === agent.id &&
+            item.id !== run.id &&
+            (item.status === "queued" || item.status === "running"),
+        )
+          ? "busy"
+          : "ready";
         agent.codexThreadId = result.threadId;
         if (result.threadId) {
           agent.codexThreads = { ...(agent.codexThreads ?? {}), [context.userId]: result.threadId };
@@ -1239,10 +1349,12 @@ export class AgentService {
     this.cancellationRequests.add(agentId);
     try {
       await this.runner.cancel(agentId);
-      const execution = this.activeExecutions.get(agentId);
-      if (execution) {
-        await execution;
-      }
+      // Stopping an Agent stops all of it, so wait on every principal's run.
+      const prefix = agentId + "::";
+      const running = [...this.activeExecutions.entries()]
+        .filter(([key]) => key.startsWith(prefix))
+        .map(([, execution]) => execution);
+      await Promise.all(running.map((execution) => execution.catch(() => undefined)));
     } finally {
       this.cancellationRequests.delete(agentId);
     }

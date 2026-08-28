@@ -587,6 +587,18 @@ function ContractCard({
 }) {
   const [busy, setBusy] = useState(false);
   const [showBrief, setShowBrief] = useState(false);
+  /*
+   * The escalation, once its evidence has been fetched and before it is
+   * applied. It used to be applied in the same click, which meant a scope was
+   * widened to *every* host the Agent had ever been refused, sight unseen —
+   * including the unrequested telemetry host the refusals exist to catch. A
+   * reviewer may always remove without evidence; adding is the direction that
+   * needs a person, and a person cannot decide what they have not been shown.
+   */
+  const [escalation, setEscalation] = useState<{
+    evidence: { target: string; kind: string; occurrences: number }[];
+    chosen: Record<string, boolean>;
+  } | null>(null);
 
   const revise = async (scope: CapabilityScope) => {
     setBusy(true);
@@ -600,15 +612,45 @@ function ContractCard({
     }
   };
 
+  /** Step one: fetch the evidence and show it. Nothing is granted yet. */
   const escalate = async () => {
     setBusy(true);
     try {
       const proposal = await api.escalation(contract.id);
-      if (proposal.evidence.length === 0) {
-        onError("No denial has been recorded for this contract, so there is nothing to escalate.");
+      const egress = proposal.evidence.filter((item) => item.kind === "egress");
+      if (egress.length === 0) {
+        onError("No egress denial has been recorded for this contract, so there is nothing to escalate.");
         return;
       }
-      await api.reviseContract(contract.id, { scope: proposal.proposedScope });
+      // Nothing pre-ticked. The default has to be "grant none": a default that
+      // grants is a default nobody reads.
+      setEscalation({ evidence: egress, chosen: {} });
+    } catch (error) {
+      onError(error instanceof ApiError ? error.message : String(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** Step two: widen to exactly what was ticked. */
+  const applyEscalation = async () => {
+    if (!escalation) return;
+    const targets = escalation.evidence
+      .filter((item) => escalation.chosen[item.target])
+      .map((item) => item.target);
+    if (targets.length === 0) {
+      onError("Choose at least one target to restore, or cancel.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.reviseContract(contract.id, {
+        scope: {
+          ...contract.scope,
+          domains: [...new Set([...contract.scope.domains, ...targets])],
+        },
+      });
+      setEscalation(null);
       onChanged();
     } catch (error) {
       onError(error instanceof ApiError ? error.message : String(error));
@@ -709,7 +751,47 @@ function ContractCard({
         disabled={busy || !canDecide}
       />
 
-      {contract.status === "active" && (
+      {contract.status === "active" && escalation && (
+        <div className="escalation-panel">
+          <strong>Restore which of these?</strong>
+          <p className="section-hint">
+            Each was refused at the broker while this contract was in force. A refusal
+            is evidence that the task reached for it — not that it should be allowed to.
+          </p>
+          {escalation.evidence.map((item) => (
+            <label key={item.target} className="escalation-row">
+              <input
+                type="checkbox"
+                checked={escalation.chosen[item.target] === true}
+                onChange={(event) =>
+                  setEscalation({
+                    ...escalation,
+                    chosen: { ...escalation.chosen, [item.target]: event.target.checked },
+                  })
+                }
+              />
+              <code>{item.target}</code>
+              <span className="muted">
+                {item.occurrences} {item.occurrences === 1 ? "refusal" : "refusals"}
+              </span>
+            </label>
+          ))}
+          <div className="candidate-actions">
+            <button className="button" disabled={busy} onClick={applyEscalation}>
+              {busy ? "Applying…" : "Restore the ticked targets"}
+            </button>
+            <button
+              className="button button-ghost"
+              disabled={busy}
+              onClick={() => setEscalation(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {contract.status === "active" && !escalation && (
         <footer className="candidate-actions">
           <button
             className="button"
@@ -905,7 +987,15 @@ export default function Governance({
 
       <section>
         <h2>
-          Governed tasks <span className="count">{contracts.length}</span>
+          Governed tasks{" "}
+          {/*
+            Active versions, not rows. A superseded version stays on screen so
+            the v1 -> v2 history is visible, but counting it says "4 governed
+            tasks" next to three tasks, one of which is simply listed twice.
+          */}
+          <span className="count">
+            {contracts.filter((contract) => contract.status === "active").length}
+          </span>
         </h2>
         <p className="section-hint">
           Promoted from repetition. Each carries a brief distilled from how the task is

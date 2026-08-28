@@ -155,6 +155,82 @@ describe("Agent lifecycle", () => {
     expect(service.getMessages(agent.id)).toHaveLength(4);
   });
 
+  /*
+   * The negative case - the same principal sending twice before their first
+   * turn lands - is guarded in `sendMessage` but not asserted here: the stub
+   * runner settles a run faster than a second call can be made, so any test of
+   * it races. It is exercised for real against the container runtime, where a
+   * turn takes seconds.
+   */
+  it("lets two principals run on one shared Agent at the same time", async () => {
+    const service = await makeService();
+    const agent = await service.createAgent({ name: "Shared specialist" });
+
+    // Dispatched together, not awaited in turn. A promoted specialist is shared
+    // by everyone routed to it, and a single busy flag on the Agent meant the
+    // second person got "already running" for as long as the first person's
+    // turn took - on the one Agent nobody chose to open.
+    const [first, second] = await Promise.all([
+      service.sendMessage(agent.id, "alice asks", { userId: "user-a" }),
+      service.sendMessage(agent.id, "bob asks", { userId: "user-b" }),
+    ]);
+
+    await expect.poll(() => service.getRun(first.run.id).status).toBe("completed");
+    await expect.poll(() => service.getRun(second.run.id).status).toBe("completed");
+    expect(service.getMessages(agent.id, "user-a")).toHaveLength(2);
+    expect(service.getMessages(agent.id, "user-b")).toHaveLength(2);
+  });
+
+  it("promotes one contract per task when several runs settle at once", async () => {
+    const service = await makeService();
+    const agent = await service.createAgent({ name: "Shared specialist" });
+
+    // Concurrent runs each trigger the detection pass on settle. Reading the
+    // candidate queue and then writing a contract is not atomic, so without a
+    // lock every one of them saw "not promoted yet" and promoted its own.
+    const sent = await Promise.all(
+      ["user-a", "user-b", "user-c"].map((userId) =>
+        service.sendMessage(agent.id, "summarise the repository for me", { userId }),
+      ),
+    );
+    for (const item of sent) {
+      await expect.poll(() => service.getRun(item.run.id).status).toBe("completed");
+    }
+
+    const active = service.codify.listContracts().filter((entry) => entry.status === "active");
+    const names = active.map((entry) => entry.name.toLowerCase());
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("shows each principal only its own runs on a shared Agent", async () => {
+    const service = await makeService();
+    const agent = await service.createAgent({ name: "Shared specialist" });
+
+    const first = await service.sendMessage(agent.id, "alice asks for a summary", {
+      userId: "user-a",
+    });
+    await expect.poll(() => service.getRun(first.run.id).status).toBe("completed");
+    const second = await service.sendMessage(agent.id, "bob asks for a summary", {
+      userId: "user-b",
+    });
+    await expect.poll(() => service.getRun(second.run.id).status).toBe("completed");
+
+    const alice = service.getRuns(agent.id, "user-a");
+    const bob = service.getRuns(agent.id, "user-b");
+    expect(alice.map((run) => run.id)).toEqual([first.run.id]);
+    expect(bob.map((run) => run.id)).toEqual([second.run.id]);
+
+    // The case this was written for: a principal who has never used the Agent
+    // gets nothing, rather than the newest run somebody else started. The UI
+    // reads `runs[0]` for the evidence panel, so a leak here captions one
+    // person's routing decision and failure with another person's name.
+    expect(service.getRuns(agent.id, "user-c")).toEqual([]);
+
+    // Asking as nobody in particular still sees the whole Agent, which is what
+    // the governance views rely on.
+    expect(service.getRuns(agent.id)).toHaveLength(2);
+  });
+
   it("resets only the calling principal's thread and transcript", async () => {
     const service = await makeService();
     const agent = await service.createAgent({ name: "Shared specialist" });

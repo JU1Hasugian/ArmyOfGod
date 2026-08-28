@@ -1214,11 +1214,20 @@ towards continuity.
    its own subject; a correction does not need to, because the subject is what
    just happened.
 3. **Eight words or fewer → a follow-up.**
-4. **Over twelve words → a new request.** Referential words are evidence only
-   inside that window: *"draft a birthday message and send it round the team"*
-   contains "it" and is a whole new task. A correction long enough to need a
-   pronoun is rare; a fresh request containing one is ordinary.
-5. **In between → referential or adjustment words decide.**
+4. **A creation verb, with no adjustment word → a new request.** *"Draft a
+   birthday message and send it round the team"* contains "it" and is still a
+   whole new task, because it asks for a message that does not exist yet. The
+   adjustment guard keeps *"write it shorter"* a correction: remaking an
+   artefact differently is not asking for a new one.
+5. **Otherwise → referential or adjustment words decide.**
+
+Length used to stand in for rule 4 — anything over twelve words was a new
+request. It read manners as self-containment. A hedged correction is *longer*
+than a blunt one, so *"i think the heading needs to be more bigger and bolder
+for the release note"* fell out of the window and ran unrestricted on the
+general Agent, which is the failure this section calls the worse of the two.
+Asking what the sentence wants built, rather than how long it is, separates the
+birthday message from the correction without punishing politeness.
 
 Continuity is resolved *before* `route()` rather than after, so the specialist
 becomes the addressed Agent and its `principal_bound` scope falls out of the

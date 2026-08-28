@@ -84,14 +84,32 @@ button {
   color: inherit;
 }
 
+/*
+ * The shell owns the viewport; nothing outside it scrolls.
+ *
+ * `min-height: 100vh` let the page grow past the window, so the rail scrolled
+ * away with the content and the composer wandered off the bottom edge - on a
+ * short window you had to scroll to reach the thing you type into. A fixed
+ * height with the scrolling pushed inward keeps every frame identical: the
+ * chrome stays put and the conversation takes the slack.
+ *
+ * The long views still scroll, but in `.main` rather than the document, so a
+ * governance list stays reachable without the shell moving.
+ *
+ * `clip`, not `hidden`. `hidden` still makes this a scroll *container* - it only
+ * takes away the scrollbar - so the transcript's `scrollIntoView` scrolled the
+ * shell itself by 43px and pinned it there, with the brand cut off the top and
+ * no scrollbar to put it back. `clip` refuses the scroll rather than hiding it.
+ */
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: clip;
   display: grid;
   grid-template-columns: 276px minmax(0, 1fr);
 }
 
 .sidebar {
-  min-height: 100vh;
+  min-height: 0;
   padding: 24px 18px;
   background: #242421;
   color: #f5f3ed;
@@ -377,7 +395,12 @@ button {
 
 .main {
   min-width: 0;
-  min-height: 100vh;
+  min-height: 0;
+  /* The one scroll container. Long views scroll here; the shell does not. */
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   padding: 22px 34px 34px;
   background:
     radial-gradient(circle at 86% -10%, rgba(105, 84, 217, 0.09), transparent 30%),
@@ -633,13 +656,93 @@ textarea:focus {
   text-overflow: ellipsis;
 }
 
+/*
+ * A column, not a three-row grid.
+ *
+ * It was `grid-template-rows: auto minmax(0, 1fr) auto` for topbar, messages
+ * and composer. Three rows, but the column has never had three children: the
+ * workspace panel sits between the topbar and the conversation, and two
+ * notices - the delegation banner and the split banner - appear and disappear
+ * with the run. Every extra child shifted the template by one, so `1fr` landed
+ * on the workspace panel and the conversation got an implicit `auto` row.
+ *
+ * At a tall viewport that only wasted space: the panel took 449px to draw one
+ * button. Under vertical pressure it did real damage - `minmax(0, 1fr)` let
+ * that row collapse to 0px while the opaque panel inside it still painted at
+ * full height, over the top of "handed it to <specialist>". A conditional
+ * child cannot be counted in a static template, so the count is no longer
+ * load-bearing: the conversation takes the slack and everything else is
+ * intrinsic, however many notices happen to be on screen.
+ */
 .playground {
-  height: calc(100vh - 150px);
-  min-height: 560px;
+  /*
+   * Takes the height left in `.main` instead of guessing it from `100vh` minus
+   * a constant. The constant was wrong whenever the header wrapped or a banner
+   * appeared, which is exactly when space is tight. The floor is a usability
+   * limit, not a layout one: below it `.main` scrolls rather than crushing the
+   * conversation to nothing.
+   */
+  flex: 1 1 auto;
+  min-height: 320px;
   border-radius: 17px;
   overflow: hidden;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Intrinsic height, and never squeezed: a notice that shrinks to nothing still
+   paints its contents over its neighbour. */
+.playground > .playground-topbar,
+.playground > .delegation-banner,
+.playground > .split-banner {
+  flex: 0 0 auto;
+}
+
+/*
+ * The workspace panel yields before the composer does.
+ *
+ * The card has a fixed height and clips, so when the column cannot fit, some
+ * child loses. The conversation bottoms out at its own padding, which left the
+ * composer - the one control the whole screen exists to reach - pushed out of
+ * the bottom on a short viewport with the panel open. Allowing the panel to
+ * shrink and scroll inside itself puts the loss somewhere recoverable.
+ */
+.playground > .workspace-files {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  /*
+   * No `min-height: 0` here, deliberately. That would let the block shrink past
+   * its own toggle, and a 27px button inside an 18px box paints over the
+   * conversation underneath - the same fault as the banner it was meant to stop
+   * covering. Without it the automatic minimum is the button, and the panel
+   * below absorbs the shrink because that is where `min-height: 0` belongs.
+   */
+}
+
+/* The conversation absorbs whatever is left. `min-height: 0` is what lets it
+   scroll rather than push the composer out of the bottom of the card. */
+.playground > .messages {
+  /*
+   * Padding scrolls with the content in a scroll container, so once the
+   * conversation is scrolled its first line sits flush against the workspace
+   * row above and the two read as one overlapping block. A hairline says where
+   * the scrolling region starts.
+   */
+  border-top: 1px solid var(--line);
+  flex: 1 1 auto;
+  /*
+   * A floor, not `0`. The card has a definite height, so this resolves, and it
+   * fixes the order in which things give way when the column is over-full: the
+   * conversation keeps a quarter of the card, the workspace panel shrinks and
+   * scrolls into whatever is left, and the composer - which never shrinks - is
+   * never the thing pushed out of the bottom.
+   */
+  min-height: 25%;
+}
+
+.playground > .composer {
+  flex: 0 0 auto;
 }
 
 .playground-topbar {
@@ -1024,11 +1127,16 @@ textarea:focus {
   }
 }
 
+/*
+ * One breakpoint, not two.
+ *
+ * Between 681px and 900px the rail narrowed to 76px but kept the principal
+ * switch, so "SIGNED IN AS" wrapped onto two lines above a select clipped to
+ * "us" - a control identifying who you are signed in as, too narrow to show
+ * who you are signed in as. A user identity needs more width than an icon
+ * rail has, so the horizontal bar starts here instead and that band is gone.
+ */
 @media (max-width: 900px) {
-  .app-shell {
-    grid-template-columns: 76px minmax(0, 1fr);
-  }
-
   .sidebar {
     padding: 20px 10px;
   }
@@ -1037,9 +1145,31 @@ textarea:focus {
     padding: 2px 9px 24px;
   }
 
+  /*
+   * The rail is 76px here, so every label in it has to go, not just some. The
+   * governance button kept its text and `white-space: nowrap` kept it on one
+   * line: at 320px it measured 164px wide inside a 76px rail, pushed the agent
+   * list off the right-hand edge, and gave the whole page a horizontal
+   * scrollbar. It collapses with the others now.
+   */
+  /*
+   * Unconditionally, not `:not(:focus)`.
+   *
+   * Revealing a label on focus is a reasonable idea for a control that can grow
+   * to hold it. These cannot: they are 38px squares, so clicking one restored
+   * "Codify governance" at full size inside a box built for a single glyph and
+   * the text spilled across the bar. The name is still in the accessibility
+   * tree - `font-size: 0` hides text visually and leaves it there - and the
+   * `title` gives a pointer user the same label on hover.
+   */
   .brand > div:last-child,
-  .create-button:not(:focus) {
+  .create-button,
+  .nav-button {
     font-size: 0;
+  }
+
+  .nav-button span {
+    font-size: 18px;
   }
 
   .create-button {
@@ -1075,7 +1205,7 @@ textarea:focus {
   }
 }
 
-@media (max-width: 680px) {
+@media (max-width: 900px) {
   .app-shell {
     display: block;
   }
@@ -1104,8 +1234,23 @@ textarea:focus {
     margin-left: auto;
   }
 
+  /*
+   * The rail is a horizontal bar at this width, and a flex row whose items all
+   * refuse to shrink is how content ends up past the right edge. The list takes
+   * whatever is left over and scrolls inside itself; the controls beside it
+   * keep their intrinsic size but may not grow.
+   */
+  .sidebar > .brand,
+  .sidebar > .principal-switch,
+  .sidebar > .create-button,
+  .sidebar > .nav-button {
+    flex: 0 0 auto;
+  }
+
   .agent-list {
-    max-width: 50vw;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
     flex-direction: row;
     overflow-x: auto;
   }
@@ -1114,50 +1259,29 @@ textarea:focus {
     width: auto;
   }
 
+  /*
+   * A definite height, not a minimum.
+   *
+   * The shell clips, and in this layout it is `display: block`, so `.main` had
+   * nothing to size its own scrolling against: it grew to its content, the
+   * shell cut off whatever did not fit, and `overflow-y: auto` never engaged
+   * because scrollHeight equalled clientHeight. 200px of the page was simply
+   * unreachable. Pinned to the space under the bar, it scrolls when it must.
+   */
   .main {
     padding: 12px;
-    min-height: calc(100vh - 65px);
-  }
-
-  .agent-header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
-    padding: 5px;
-  }
-
-  .header-actions {
-    width: 100%;
-  }
-
-  .header-actions .button {
-    flex: 1;
+    height: calc(100vh - 65px);
+    min-height: 0;
   }
 
   .playground {
-    height: calc(100vh - 224px);
-    min-height: 490px;
+    min-height: 300px;
   }
 
   .playground-topbar {
     padding: 14px;
   }
 
-  .session-info {
-    display: none;
-  }
-
-  .messages {
-    padding: 22px 15px;
-  }
-
-  .message-user {
-    margin-left: 8%;
-  }
-
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* ---------------------------------------------------------------- Codify --
@@ -2306,6 +2430,12 @@ textarea:focus {
   /* Its own stacking context, so the conversation cannot paint over it. */
   position: relative;
   z-index: 5;
+  /* Bounded, so a workspace with many files scrolls itself instead of pushing
+     the conversation out of the card on a short viewport. */
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: min(38vh, 320px);
+  overflow: auto;
   background: #ffffff;
   border: 1px solid var(--line, #e0ded6);
   border-radius: 10px;
@@ -2393,4 +2523,224 @@ textarea:focus {
   color: #b4232a;
   font-size: 12px;
   margin: 0 0 8px;
+}
+
+/* --------------------------------------------------- narrow-width overrides --
+ * Placed last on purpose.
+ *
+ * The two media blocks above sit at the top of the file, before most component
+ * rules. That is fine while a component's base rule is declared above them, and
+ * silently useless when it is not: `.nav-button { width: 100% }` is declared
+ * some 150 lines below them, so at equal specificity it won every one of their
+ * overrides. The button stayed full width in a 76px rail, which is what pushed
+ * the agent list off the right edge and gave the page a horizontal scrollbar.
+ *
+ * Anything overriding a component declared after those blocks belongs here.
+ */
+
+@media (max-width: 900px) {
+  .nav-button {
+    justify-content: center;
+    gap: 0;
+    padding: 0;
+    min-height: 38px;
+  }
+}
+
+@media (max-width: 900px) {
+  /*
+   * A heading and its action, side by side, with nothing telling them to wrap.
+   * At 390px the text column was 117px wide - "Learned least-privilege" broke
+   * to one word per line and the paragraph beside the button became a ribbon.
+   * They stack instead.
+   */
+  .governance-header {
+    flex-wrap: wrap;
+  }
+
+  .governance-header > div:first-child {
+    min-width: 0;
+    flex: 1 1 260px;
+  }
+
+  /*
+   * `font-size: 0` collapses inherited text and nothing else. The wordmark is
+   * a nested element that sets its own size, so it kept its box: invisible,
+   * and still 116px wide in a rail that has 76. Hidden outright instead.
+   */
+  .brand > div:last-child {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  /*
+   * A section heading and its explanatory line, inside a 65px bar and inside
+   * the horizontally scrolling list of chips - two lines of body text wedged
+   * between the buttons and the Agents. The chips are still grouped visually by
+   * their own styling; the caption is what does not fit.
+   */
+  .agent-group {
+    display: none;
+  }
+
+  .nav-button {
+    width: 38px;
+    min-width: 38px;
+    margin-bottom: 0;
+  }
+
+  /*
+   * A stacked label and select need more than the 65px bar has, so the caption
+   * was clipping against the top edge. The select shows the principal anyway -
+   * "Signed in as" over a control reading "user-a" says it twice.
+   */
+  .principal-switch > .eyebrow {
+    display: none;
+  }
+
+  /*
+   * `margin-bottom: 14px` is spacing for a vertical rail. Carried into a
+   * horizontal bar it became 14px of dead space under one item, which
+   * `align-items: center` then compensated for by lifting the control 7px
+   * above every other thing in the row.
+   */
+  .principal-switch {
+    min-width: 0;
+    margin-bottom: 0;
+    justify-content: center;
+  }
+
+  /*
+   * The label text is `font-size: 0`, but a zero-sized text node still takes a
+   * slot in a flex row, and the button's 7px gap still sits in front of it. The
+   * glyph was pushed 3px left of centre by spacing reserved for a label that is
+   * not being drawn.
+   */
+  .create-button,
+  .nav-button {
+    gap: 0;
+  }
+
+  /* One row, one height: the cards match the controls beside them. */
+  .agent-list {
+    align-items: center;
+  }
+
+  .agent-card {
+    width: 38px;
+    min-width: 38px;
+    height: 38px;
+    padding: 0;
+  }
+
+  .agent-avatar {
+    width: 26px;
+    height: 26px;
+    font-size: 12px;
+  }
+
+  .principal-switch select {
+    max-width: 120px;
+  }
+}
+
+/* The banners and the Agent header state their own size; only the card grows. */
+.main > .config-banner,
+.main > .error-banner,
+.main > .agent-header,
+.main > .settings-panel {
+  flex: 0 0 auto;
+}
+
+/*
+ * `margin-inline: auto` centres these within a 1180px cap, which is what it did
+ * as a block: fill the column, stop at 1180, sit in the middle. As flex items
+ * it means something else - an auto margin on the cross axis wins over
+ * `stretch`, so each one collapsed to its own content width and centred there.
+ * The header lost its left edge and the playground card became a narrow strip
+ * in the middle of the window. The cap and the centring are still wanted; the
+ * filling has to be asked for explicitly now.
+ */
+.main > .config-banner,
+.main > .error-banner,
+.main > .agent-header,
+.main > .settings-panel,
+.main > .playground {
+  width: 100%;
+}
+
+/* ------------------------------------------------- genuinely narrow screens --
+ * Separate from the shell breakpoint above on purpose.
+ *
+ * The bar-instead-of-rail decision is about a 76px rail being too narrow for a
+ * user identity, and it takes effect at 900. Stacking a header and giving its
+ * buttons a row each is about *horizontal* room, and at 853 - the width of a
+ * three-up window on a 2560px screen - there is plenty. Merging the two put a
+ * full-width Settings/Stop/Delete row into a window that had space for the
+ * header on one line.
+ */
+
+@media (max-width: 680px) {
+  .agent-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+    padding: 5px;
+  }
+
+  .header-actions {
+    width: 100%;
+  }
+
+  .header-actions .button {
+    flex: 1;
+  }
+
+  .messages {
+    padding: 22px 15px;
+  }
+
+  .message-user {
+    margin-left: 8%;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /*
+   * The status pill is decoration and goes. The reset button shares its class
+   * and is not: it is the only way out of a Codex thread that has started
+   * reporting work it did not do, and hiding it left no way to do that on a
+   * narrow screen.
+   */
+  .session-info:not(.session-reset) {
+    display: none;
+  }
+
+  .session-reset {
+    flex: 0 0 auto;
+  }
+}
+
+/* The escalation review step: what a widening would grant, before it grants it. */
+.escalation-panel {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--purple) 35%, var(--line));
+  border-radius: 12px;
+  background: var(--purple-soft);
+}
+
+.escalation-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 13px;
+}
+
+.escalation-row code {
+  font-size: 12px;
 }

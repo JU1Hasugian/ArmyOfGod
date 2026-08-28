@@ -58,7 +58,20 @@ export class WorkspaceManager {
   async ensureFor(agent: Agent, userId: string): Promise<string> {
     const directory = this.workspacePathFor(agent.id, userId);
     try {
-      if ((await stat(directory)).isDirectory()) return directory;
+      if ((await stat(directory)).isDirectory()) {
+        /*
+         * The brief is rewritten on every run, not just the first.
+         *
+         * `AGENTS.md` is what the Runtime reads, and it used to be written once
+         * when the directory was created. A rule learned afterwards therefore
+         * reached only principals who had never run before — so the person the
+         * refinement beat is about, somebody already using the specialist, went
+         * on getting the old brief indefinitely. The fixtures and anything the
+         * Agent has written are left alone; only the brief is refreshed.
+         */
+        await this.writeInstructionsTo(directory, agent);
+        return directory;
+      }
     } catch {
       /* first run for this principal */
     }

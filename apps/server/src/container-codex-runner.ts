@@ -24,6 +24,8 @@ import type {
 const execFileAsync = promisify(execFile);
 
 interface ActiveContainer {
+  /** Which Agent this container belongs to, so `cancel` can find them all. */
+  agentId: string;
   child: ChildProcess;
   containerName: string;
   cancelled: boolean;
@@ -42,10 +44,18 @@ interface ParsedEvents {
   outputs: string[];
 }
 
-export function containerName(agentId: string, instanceId = "default"): string {
+export function containerName(
+  agentId: string,
+  instanceId = "default",
+  runId?: string,
+): string {
   const safeInstance = instanceId.replace(/[^a-zA-Z0-9_.-]/g, "-").slice(0, 32);
   const safeAgent = agentId.replace(/[^a-zA-Z0-9_.-]/g, "-").slice(0, 48);
-  return "launchpad-" + safeInstance + "-" + safeAgent;
+  const base = "launchpad-" + safeInstance + "-" + safeAgent;
+  // The Agent is shared; the container is not. Without the run, two principals
+  // on one specialist collide on the daemon's name registry.
+  if (!runId) return base;
+  return base + "-" + runId.replace(/[^a-zA-Z0-9]/g, "").slice(0, 12);
 }
 
 /**
@@ -113,7 +123,7 @@ export function buildContainerRunArgs(
   config: AppConfig,
   launch?: ScopedLaunch,
 ): string[] {
-  const name = containerName(request.agentId, config.runtimeInstanceId);
+  const name = containerName(request.agentId, config.runtimeInstanceId, request.runId);
   const engineName = config.containerEngine.split(/[\\/]/).at(-1)?.toLowerCase();
   const codexHome = launch?.codexHome ?? config.codexHome;
   return [
@@ -196,13 +206,18 @@ export class ContainerCodexRunner implements AgentRunner {
     }
   }
 
+  /** Stops every container this Agent currently has, whoever started it. */
   async cancel(agentId: string): Promise<boolean> {
-    const active = this.active.get(agentId);
-    if (!active) return false;
+    const running = [...this.active.values()].filter((entry) => entry.agentId === agentId);
+    if (running.length === 0) return false;
 
-    active.cancelled = true;
-    await this.removeContainer(active);
-    await active.settled;
+    await Promise.all(
+      running.map(async (active) => {
+        active.cancelled = true;
+        await this.removeContainer(active);
+        await active.settled;
+      }),
+    );
     return true;
   }
 
@@ -224,8 +239,8 @@ export class ContainerCodexRunner implements AgentRunner {
   }
 
   async run(request: RunnerRequest): Promise<RunnerResult> {
-    if (this.active.has(request.agentId)) {
-      throw new Error("Agent already has an active Runtime container");
+    if (this.active.has(request.runId)) {
+      throw new Error("This run already has an active Runtime container");
     }
     const binding = isCodifyActive(this.config) ? request.codify : undefined;
     if (!binding) return this.execute(request);
@@ -354,14 +369,19 @@ export class ContainerCodexRunner implements AgentRunner {
     });
     const active: ActiveContainer = {
       child,
-      containerName: containerName(request.agentId, this.config.runtimeInstanceId),
+      containerName: containerName(
+        request.agentId,
+        this.config.runtimeInstanceId,
+        request.runId,
+      ),
+      agentId: request.agentId,
       cancelled: false,
       timedOut: false,
       outputExceeded: false,
       settled,
       termination: null,
     };
-    this.active.set(request.agentId, active);
+    this.active.set(request.runId, active);
 
     const parsed: ParsedEvents = {
       messages: [],

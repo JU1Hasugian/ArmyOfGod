@@ -31,6 +31,13 @@ describe("Container Codex runner", () => {
     expect(containerName("agent/unsafe", "test-instance")).toBe(
       "launchpad-test-instance-agent-unsafe",
     );
+    // Two runs of one shared Agent must not ask the daemon for one name. The
+    // second used to die with a name conflict, which is what one person's turn
+    // did to everybody else routed to the same specialist.
+    const first = containerName("agent-1", "test-instance", "0f1e2d3c-aaaa-bbbb");
+    const second = containerName("agent-1", "test-instance", "9a8b7c6d-cccc-dddd");
+    expect(first).not.toBe(second);
+    expect(first.startsWith("launchpad-test-instance-agent-1-")).toBe(true);
     expect(args).toContain("runtime:test");
     expect(args).toContain("type=bind,src=/tmp/agent-workspace,dst=/workspace");
     // `config.codexHome` is `path.resolve`d, which is host-specific; assert against

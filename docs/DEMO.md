@@ -115,6 +115,15 @@ windows and show them at once**: five browser windows for the five ad-hoc runs,
 three for the governed ones. Each window is a different principal, and the
 principal is per-tab React state, so five tabs each on a different user works.
 
+Five at once really do run at once. That was not always true: a single busy flag
+on the Agent, an execution map keyed by Agent, and a container name derived from
+the Agent all meant the second person got `409 This Agent is already running`
+until the first had finished. Everything a turn touches - workspace, transcript,
+Codex thread, run record - was already per principal, so those three were simply
+the last places that were not. If you would rather not rely on it, sending them
+one at a time and arranging the finished windows in the edit gives the identical
+frame.
+
 That turns 65 seconds of watching people type into about 30 of seeing the
 contrast, and it is what buys room for the compound split and the refinement
 loop.
@@ -140,9 +149,22 @@ Three beats need state that takes minutes to create and seconds to show:
 
 - **Refinement (1:08)** — send the governed task *and* a correction as two
   different principals beforehand, so the rule is already on the contract. Film
-  the result, not the four turns. Use a correction that does **not** restate the
-  task: *"Make the headings bigger and bolder"* works, *"...in that release
-  note"* routes as a new request instead of a correction.
+  the result, not the four turns. Any natural phrasing of the correction works
+  now, including one that restates the task: *"Make the headings bigger and
+  bolder"*, *"...in that release note"* and *"...in the release note"* all route
+  as corrections, on the embedding channel and on the wordlist fallback alike.
+  **The second person's wording is the one to probe**, because it has to cluster
+  with the first: corrections are matched to each other on the semantic channel
+  at 0.72, and most natural rewordings miss. Measured against *"Use bigger,
+  bolder section headings in that release note."* — *"Make the section headings
+  bigger and bolder in that release note"* clusters at **0.845** and
+  *"Please use bigger, bolder headings in this release note"* at **0.833**,
+  while *"Make the headings bigger and bolder please"* is **0.602** and produces
+  no rule at all. Keeping "section headings" and naming the artefact is what
+  carries it.
+  This used to be a trap - a correction over twelve words was read as a new
+  request, so naming the artefact you were correcting sent it to the general
+  Agent - and `continuity.ts` no longer decides on length.
 - **Compound split (1:54)** — the banner is **transient React state**. It renders
   while the request is in flight and is gone on reload, so this one must be
   filmed live. Two real turns; speed it up in the edit.
@@ -756,9 +778,21 @@ old version is deprecated, not edited; the change is a new record.
 **Signed in as:** `user-a`
 **Do:** send the governed task again.
 
-**Expect:** it still routes, still runs, still writes its file — and `github.com`
-is now **refused at the broker**, appearing in **Denials** alongside the
-`ab.chatgpt.com` rows.
+**Expect:** it still routes, still runs, and still writes its file.
+
+> [!CAUTION]
+> **It will not produce a `github.com` denial, and an earlier draft of this
+> runbook said it would.** The fixture's `./repo` is a local directory, so the
+> task never reaches github.com — the host was in the scope because the observed
+> corpus put it there, not because these runs need it. Revoking it therefore
+> costs the run nothing, and the only refusals you will see are the
+> `ab.chatgpt.com` rows the Agent generates on its own.
+>
+> That is still a true and sayable point — *"the scope was wider than the
+> behaviour, and removing it changed nothing"* — but it is a different sentence
+> from the one this beat used to promise. **Do not** escalate afterwards
+> expecting github.com back: the only recorded evidence is `ab.chatgpt.com`, so
+> that is what a restore would offer you.
 
 **Say:**
 
@@ -772,8 +806,16 @@ is now **refused at the broker**, appearing in **Denials** alongside the
 **Do:** use **Escalate from recorded denials** on that contract. The denial you
 just produced is the evidence that permits the widening.
 
-**Expect:** `github.com` returns, the contract goes **v2 → v3**, and the next run
-reaches it again.
+**Expect:** the escalation panel opens and lists what was actually refused, with
+a checkbox each and nothing pre-ticked. In this fixture that list is
+`ab.chatgpt.com` — the unrequested host — so the honest thing to do on camera is
+to **read it and cancel**, which is its own point: the evidence gate offers you
+what the Agent reached for, and a person still decides that reaching for it is
+not a reason to allow it.
+
+> Until recently this button applied in one click, granting *every* recorded
+> denial sight unseen. Restoring `github.com` from evidence needs a run that
+> actually reached for github.com; nothing in the fixture does.
 
 **Say:**
 
@@ -793,11 +835,13 @@ reaches it again.
 
 **Do:** click **Show trace** on the governed run.
 
-**Expect:** one trace id, ~24 spans nested under the turn —
-`ORCHESTRATION` → `POLICY_DECISION` → `SANDBOX_EXECUTION` → `MODEL_CALL` ×n →
-`EGRESS`, with denials appearing as denied spans.
+**Expect:** one trace id and roughly 18 spans nested under the turn —
+`ORCHESTRATION` ×2 → `POLICY_DECISION` → `BUDGET_CHECK` → `DELEGATION` →
+`SANDBOX_EXECUTION` → `MODEL_CALL` ×n → `EGRESS`. An egress refusal appears as a
+span named `denied ab.chatgpt.com` carrying `status: denied`; a *path* refusal
+does not get a span of its own, and is read from **Denials** instead.
 
-**Do:** run `npm run check` on camera — 267 passing, 4 skipped.
+**Do:** run `npm run check` on camera — 277 passing, 5 skipped (282 total).
 
 **Do:** state one limitation out loud. This one:
 

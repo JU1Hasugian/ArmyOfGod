@@ -1008,6 +1008,11 @@ export class CodifyService {
       const storedRun = database.runs.find((item) => item.id === run.id);
       if (storedRun?.codify) {
         storedRun.codify.denials = denials.length;
+        // The evidence panel has to say *what* was refused, not just how often.
+        storedRun.codify.deniedTargets = denials.map((denial) => ({
+          kind: denial.kind,
+          target: denial.target,
+        }));
         storedRun.codify.domainsReached = domainsReached;
       }
     });
@@ -1513,7 +1518,19 @@ export class CodifyService {
    * A held proposal is never rejected. The human queue still exists; it just
    * only ever contains what the guard would not sign.
    */
-  async autoApplyRefinements(): Promise<{
+  /**
+   * @param writeBrief Applies the composed brief to the specialist Agent.
+   *
+   * Required for the same reason `autoPromote` takes a creator: the contract is
+   * the record, but `AGENTS.md` in the Agent's workspace is what the Runtime
+   * reads. The operator path already moved both together; this one recorded the
+   * rule on a new contract version, showed it under "Learned from usage", and
+   * then dropped the instructions on the floor - so the rule two people had
+   * asked for changed nothing about how the task actually ran.
+   */
+  async autoApplyRefinements(
+    writeBrief?: (agentId: string, instructions: string) => Promise<unknown>,
+  ): Promise<{
     applied: RefinementProposal[];
     heldForReview: { id: string; reason: string }[];
   }> {
@@ -1529,7 +1546,11 @@ export class CodifyService {
         continue;
       }
       try {
-        await this.applyRefinement(proposal.id, AUTO_PROMOTER);
+        const outcome = await this.applyRefinement(proposal.id, AUTO_PROMOTER);
+        // The brief has to reach the Agent, or the version bump is decoration.
+        if (writeBrief) {
+          await writeBrief(outcome.contract.agentId, outcome.instructions);
+        }
         await this.store.mutate((database) => {
           const stored = database.refinementProposals.find((e) => e.id === proposal.id);
           // What the guard said, so oversight after the fact has something to
@@ -1537,8 +1558,18 @@ export class CodifyService {
           if (stored) stored.reviewNote = review.reason;
         });
         applied.push(proposal);
-      } catch {
+      } catch (error) {
         // Superseded mid-pass, or the contract went inactive. Left pending.
+        // A brief that could not be written is not the same thing, and used to
+        // be indistinguishable from it: the rule showed as applied and the
+        // specialist ran without it. Recorded so the difference is visible.
+        heldForReview.push({
+          id: proposal.id,
+          reason:
+            error instanceof Error && /not found/i.test(error.message)
+              ? "The specialist could not be updated, so the rule was not written into its brief."
+              : "The contract was superseded while this pass ran.",
+        });
       }
     }
     return { applied, heldForReview };

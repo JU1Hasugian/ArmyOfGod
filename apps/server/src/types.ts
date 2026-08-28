@@ -95,6 +95,18 @@ export interface RunCodifySummary {
   matchChannel?: "fingerprint" | "containment" | "semantic";
   scope?: CapabilityScope;
   denials: number;
+  /**
+   * What was refused, so the evidence can name it.
+   *
+   * The count alone read as though the *run* had been blocked: a card saying
+   * "1 denied - blocked at the broker" beside a completed answer invites
+   * exactly the wrong conclusion, and the thing actually refused was an
+   * unrequested `ab.chatgpt.com` call the Agent made on its own. Naming the
+   * target turns a worrying badge into the strongest evidence here.
+   *
+   * Optional because runs recorded before it existed only kept the count.
+   */
+  deniedTargets?: { kind: string; target: string }[];
   domainsReached: string[];
   /**
    * Set when the turn was handed to a promoted specialist Agent.
@@ -123,6 +135,20 @@ export interface AgentRun {
    */
   conversationAgentId?: string;
   agentId: string;
+  /**
+   * The principal whose turn this run answers.
+   *
+   * The transcript has been keyed by principal since messages carried a
+   * `userId`; the run beside it was not, so `getRuns` handed every principal
+   * the same newest run. Signing in as somebody who had never used the Agent
+   * still showed the last person's failure and their routing decision under
+   * the new name - the evidence panel is per-principal governance, captioned
+   * with somebody else's run.
+   *
+   * Optional because runs written before this existed have no value to record.
+   * Those are matched through the transcript instead.
+   */
+  userId?: string;
   status: RunStatus;
   /** Redacted at the request boundary. The raw prompt is never persisted. */
   prompt: string;
@@ -206,6 +232,15 @@ export interface RunEvidence {
 
 export interface RunnerRequest {
   agentId: string;
+  /**
+   * The run this container serves.
+   *
+   * A container is disposable per turn, but its *name* was derived from the
+   * Agent alone — so two principals running on one shared specialist raced for
+   * the same name and the second died with a daemon name conflict. The run is
+   * the only identifier that is unique per container.
+   */
+  runId: string;
   workspacePath: string;
   /** The raw prompt. Only the redacted form is ever persisted. */
   prompt: string;

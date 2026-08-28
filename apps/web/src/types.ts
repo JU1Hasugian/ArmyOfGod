@@ -55,6 +55,8 @@ export interface RunCodifySummary {
   matchChannel?: MatchChannel;
   scope?: CapabilityScope;
   denials: number;
+  /** What was refused. Absent on runs recorded before it was captured. */
+  deniedTargets?: { kind: string; target: string }[];
   domainsReached: string[];
   delegatedFromAgentId?: string;
   delegatedFromAgentName?: string;

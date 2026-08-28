@@ -239,7 +239,8 @@ export async function createApp(
 
   app.get("/api/agents/:id/runs", async (request) => {
     const { id } = agentIdParams.parse(request.params);
-    return { runs: service.getRuns(id) };
+    // Scoped like the transcript it sits beside.
+    return { runs: service.getRuns(id, principal(request, config.codifyDefaultUser)) };
   });
 
   app.post("/api/agents/:id/messages", async (request, reply) => {
@@ -443,7 +444,9 @@ export async function createApp(
       // Detection then decision, in one pass: a proposal the guard will sign
       // is applied here rather than waiting for somebody to open this page.
       await service.codify.refreshRefinements();
-      await service.codify.autoApplyRefinements();
+      await service.codify.autoApplyRefinements((agentId, instructions) =>
+        service.applyBriefToAgent(agentId, instructions),
+      );
       return service.codify.listRefinements();
     })(),
   }));

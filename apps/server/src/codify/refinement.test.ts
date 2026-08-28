@@ -172,6 +172,49 @@ describe("Codify refinement from repeated corrections", () => {
     expect(brief).toContain("colourful palette");
   });
 
+  /*
+   * The *auto* path has no test here on purpose: `autoApplyRefinements` calls
+   * `reviewRule`, which needs a model, and without one it always returns
+   * "review" — so the branch that applies can never be reached offline. That
+   * gap is why the auto path silently dropped the composed brief while the
+   * operator path above kept writing it. It is covered against a live endpoint
+   * instead; see `docs/DEMO.md` Part 3b.
+   */
+  it("refreshes the brief of a principal who already had a workspace", async () => {
+    const context = await makeService();
+    const { agent, contract } = await promote(context);
+    // This principal runs *before* anyone corrects anything, so their workspace
+    // is seeded with the original brief.
+    const workspace = await context.workspaces.ensureFor(
+      context.service.getAgent(agent.id),
+      "user-early",
+    );
+    expect(await readFile(path.join(workspace, "AGENTS.md"), "utf8")).not.toContain(
+      "colourful palette",
+    );
+
+    await taskThenCorrection(context, agent.id, "user-a", "Please use more colour in the slides");
+    await taskThenCorrection(context, agent.id, "user-b", "please use more colour in the slides");
+    const [proposal] = await context.codify.refreshRefinements();
+    await context.service.applyRefinement(
+      proposal!.id,
+      "operator",
+      "Always use a colourful palette with accent colours on headings.",
+    );
+
+    // The rule has to reach them on their *next* run, not only people who have
+    // never run: AGENTS.md was written once at creation and never refreshed, so
+    // everybody already using the specialist kept the old brief for good.
+    const again = await context.workspaces.ensureFor(
+      context.service.getAgent(agent.id),
+      "user-early",
+    );
+    expect(again).toBe(workspace);
+    const brief = await readFile(path.join(workspace, "AGENTS.md"), "utf8");
+    expect(brief).toContain("colourful palette");
+    expect(contract.version).toBeGreaterThan(0);
+  });
+
   it("routes later turns to the refined version of the contract", async () => {
     const context = await makeService();
     const { agent } = await promote(context);
