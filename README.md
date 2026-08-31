@@ -22,7 +22,8 @@ persistent workspaces, Codex CLI on Volcengine Ark — is preserved and verified
 | | |
 |---|---|
 | **Start** | `ARK_API_KEY=… ARK_MODEL=ep-… ARK_EMBED_MODEL=ep-… npm run poc`, then open **Codify governance** |
-| **Design** | [`docs/CODIFY.md`](docs/CODIFY.md) — architecture, demo script, limitations |
+| **Demo** | [`docs/DEMO.md`](docs/DEMO.md) — the three-minute video beat by beat, and how to run every beat yourself |
+| **Design** | [`docs/CODIFY.md`](docs/CODIFY.md) — architecture, rationale, limitations |
 | **Measurement** | [`docs/SEMANTIC-ROUTING.md`](docs/SEMANTIC-ROUTING.md) — how the matcher was broken and fixed |
 | **Handover** | [`docs/ENGINEERING-LOG.md`](docs/ENGINEERING-LOG.md) — what was tried, measured, discarded |
 | **Verification** | `npm run check` — 283 tests, typecheck, both builds |
@@ -459,7 +460,7 @@ docker compose config
 ## Documentation
 
 - [Codify middleware design](docs/CODIFY.md)
-- [Three-minute demo runbook](docs/DEMO.md)
+- [Demo — the video beat by beat, and how to reproduce it](docs/DEMO.md)
 - [Semantic routing: measurement, diagnosis, fix](docs/SEMANTIC-ROUTING.md)
 - [Engineering log: decisions, rejected ideas, and measurement mistakes](docs/ENGINEERING-LOG.md)
 - [Architecture](docs/ARCHITECTURE.md)
