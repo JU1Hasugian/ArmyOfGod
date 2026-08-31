@@ -25,8 +25,8 @@ persistent workspaces, Codex CLI on Volcengine Ark — is preserved and verified
 | **Design** | [`docs/CODIFY.md`](docs/CODIFY.md) — architecture, demo script, limitations |
 | **Measurement** | [`docs/SEMANTIC-ROUTING.md`](docs/SEMANTIC-ROUTING.md) — how the matcher was broken and fixed |
 | **Handover** | [`docs/ENGINEERING-LOG.md`](docs/ENGINEERING-LOG.md) — what was tried, measured, discarded |
-| **Verification** | `npm run check` — 271 tests, typecheck, both builds |
-| **Diagram** | [One page](docs/assets/architecture.svg) — middleware, data flow, trust boundary, enforcement point |
+| **Verification** | `npm run check` — 283 tests, typecheck, both builds |
+| **Diagram** | [Codify on the Starter Kit](docs/assets/codify-on-starter-kit.svg) — middleware, data flow, trust boundary, enforcement point, and the three seams it integrates at. [One governed turn](docs/assets/architecture.svg) is the same system per-request. |
 | **Threat model** | [`docs/CODIFY.md` §12b](docs/CODIFY.md) — all six threat classes, controls, and the residual risk of each |
 
 ### What it enforces, observed live
@@ -43,6 +43,16 @@ container path, with Codex's own sandbox switched off:
 | **path** | a write to `finance/` — `EROFS`, the directory unchanged |
 | **budget** | HTTP 429 at admission, before the Run existed |
 | **secret** | `GITHUB_TOKEN` observed in past runs and withheld from auto-promotion |
+
+### Codify on the Starter Kit — what this team added
+
+[![Codify drawn onto the Track 1 Starter Kit: the unchanged baseline flow in blue — Human User, React Web UI, Fastify API, AgentService, JSON store, per-Agent workspace, AgentRunner, the disposable container and Volcengine Ark — with Codify in purple integrating at three seams, enforcing at the container boundary through an allowlisting broker, and returning observed runs along the bottom as the only source the policy is written from](docs/assets/codify-on-starter-kit.svg)](docs/assets/codify-on-starter-kit.svg)
+
+The Starter Kit is blue and unchanged; Codify is purple. It integrates at
+exactly three seams — `app.ts`, `agent-service.ts`, `container-codex-runner.ts`
+— persists into the existing `JsonStore` rather than a new data layer, and
+enforces at one boundary. Half of Codify runs on the way *in* (steps 1–4, every
+request); the other half runs on the way *back*, and is what writes the policy.
 
 ### One governed turn, end to end
 

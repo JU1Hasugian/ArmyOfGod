@@ -1,0 +1,200 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 900" width="1800" height="900" font-family="Segoe UI,Inter,system-ui,-apple-system,Helvetica Neue,Arial,sans-serif">
+  <title>Codify on the Track 1 Starter Kit</title>
+  <desc>The Starter Kit flow — Human User, React Web UI, Fastify API, AgentService, JSON metadata store, per-Agent workspace, the AgentRunner interface, the local container and the ECS Codex process, Volcengine Ark — with the Codify middleware drawn in at its three integration seams, its enforcement boundary and broker made explicit, and the observation loop that writes the policy returning along the bottom.</desc>
+
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#111318"/>
+    </marker>
+    <marker id="aCod" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#6b4fbb"/>
+    </marker>
+    <marker id="aDeny" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#b4232a"/>
+    </marker>
+    <marker id="aMute" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#9aa1ad"/>
+    </marker>
+  </defs>
+
+  <rect width="1800" height="900" fill="#ffffff"/>
+
+  <!-- ===================== TITLE ===================== -->
+  <text x="40" y="44" font-size="20" font-weight="700" fill="#10131a">Codify on the Track 1 Starter Kit &#8212; the same platform, with the middleware drawn in</text>
+  <text x="40" y="68" font-size="11.5" fill="#5b6270">Everything blue is the Starter Kit, unchanged. Everything purple is Codify. It integrates at exactly three seams and enforces at one boundary.</text>
+
+  <!-- key -->
+  <rect x="1352" y="34" width="16" height="12" rx="2" fill="#eef2fb" stroke="#2f3f6b" stroke-width="1.2"/>
+  <text x="1376" y="44" font-size="10.5" fill="#5b6270">Starter Kit</text>
+  <rect x="1462" y="34" width="16" height="12" rx="2" fill="#f3f0fb" stroke="#6b4fbb" stroke-width="1.2"/>
+  <text x="1486" y="44" font-size="10.5" fill="#5b6270">Codify</text>
+  <rect x="1552" y="34" width="16" height="12" rx="2" fill="#f4f5f7" stroke="#9aa1ad" stroke-width="1.2"/>
+  <text x="1576" y="44" font-size="10.5" fill="#5b6270">optional ECS profile</text>
+
+  <!-- ===================== CONTROL PLANE SPINE ===================== -->
+  <rect x="40" y="110" width="124" height="50" rx="6" fill="#eef2fb" stroke="#2f3f6b" stroke-width="1.4"/>
+  <text x="102" y="141" font-size="13" text-anchor="middle" fill="#10131a">Human User</text>
+
+  <rect x="196" y="110" width="146" height="50" rx="6" fill="#eef2fb" stroke="#2f3f6b" stroke-width="1.4"/>
+  <text x="269" y="141" font-size="13" text-anchor="middle" fill="#10131a">React Web UI</text>
+
+  <rect x="374" y="104" width="182" height="62" rx="6" fill="#eef2fb" stroke="#2f3f6b" stroke-width="1.4"/>
+  <text x="465" y="130" font-size="13" text-anchor="middle" fill="#10131a">Fastify API</text>
+  <text x="465" y="150" font-size="9.5" text-anchor="middle" fill="#6b4fbb">+ 22 governance routes</text>
+
+  <rect x="620" y="168" width="190" height="82" rx="6" fill="#eef2fb" stroke="#2f3f6b" stroke-width="1.4"/>
+  <text x="715" y="194" font-size="13" text-anchor="middle" fill="#10131a">AgentService</text>
+  <text x="715" y="214" font-size="9.5" text-anchor="middle" fill="#6b4fbb">+ redact &#183; route &#183; budget</text>
+  <text x="715" y="230" font-size="9.5" text-anchor="middle" fill="#6b4fbb">delegate &#183; trace</text>
+
+  <rect x="856" y="92" width="252" height="74" rx="6" fill="#eef2fb" stroke="#2f3f6b" stroke-width="1.4"/>
+  <text x="982" y="118" font-size="13" text-anchor="middle" fill="#10131a">JSON Metadata Store</text>
+  <text x="982" y="138" font-size="9.5" text-anchor="middle" fill="#6b4fbb">+ observations &#183; contracts &#183; decisions</text>
+  <text x="982" y="153" font-size="9.5" text-anchor="middle" fill="#6b4fbb">denials &#183; rules &#183; spans &#183; sessions</text>
+
+  <rect x="856" y="182" width="252" height="74" rx="6" fill="#eef2fb" stroke="#2f3f6b" stroke-width="1.4"/>
+  <text x="982" y="208" font-size="13" text-anchor="middle" fill="#10131a">Per-Agent Workspace</text>
+  <text x="982" y="228" font-size="9.5" text-anchor="middle" fill="#5b6270">one per principal per Agent</text>
+  <text x="982" y="243" font-size="9.5" text-anchor="middle" fill="#6b4fbb">read-only except the scope&#8217;s paths</text>
+
+  <path d="M164 135 L188 135" fill="none" stroke="#111318" stroke-width="1.6" marker-end="url(#a)"/>
+  <path d="M342 135 L366 135" fill="none" stroke="#111318" stroke-width="1.6" marker-end="url(#a)"/>
+  <path d="M556 143 C588 143 590 204 612 204" fill="none" stroke="#111318" stroke-width="1.6" marker-end="url(#a)"/>
+  <path d="M810 188 C830 188 834 126 848 126" fill="none" stroke="#111318" stroke-width="1.6" marker-end="url(#a)"/>
+  <path d="M810 222 C830 222 834 220 848 220" fill="none" stroke="#111318" stroke-width="1.6" marker-end="url(#a)"/>
+
+  <!-- AgentService -> AgentRunner -->
+  <path d="M715 254 C715 350 790 388 866 410" fill="none" stroke="#111318" stroke-width="1.6" marker-end="url(#a)"/>
+
+  <!-- ===================== AGENTRUNNER ===================== -->
+  <path d="M900 412 L1000 470 L900 528 L800 470 Z" fill="#fdefd0" stroke="#b58a2b" stroke-width="1.4"/>
+  <text x="900" y="464" font-size="12.5" text-anchor="middle" fill="#10131a">AgentRunner</text>
+  <text x="900" y="482" font-size="12.5" text-anchor="middle" fill="#10131a">Interface</text>
+
+  <!-- ===================== CODIFY BAND ===================== -->
+  <rect x="40" y="320" width="620" height="436" rx="10" fill="#fbfaff" stroke="#6b4fbb" stroke-width="1.4" stroke-dasharray="7 5"/>
+  <text x="60" y="346" font-size="11.5" font-weight="700" letter-spacing="0.6" fill="#6b4fbb">CODIFY MIDDLEWARE</text>
+  <text x="60" y="362" font-size="9.5" font-style="italic" fill="#6b7280">enough observations of the same task produce both the brief and the policy for it</text>
+
+  <text x="60" y="388" font-size="9" font-weight="700" letter-spacing="0.5" fill="#8a90a0">ON THE WAY IN &#8212; EVERY REQUEST</text>
+
+  <rect x="60" y="396" width="284" height="58" rx="6" fill="#f3f0fb" stroke="#6b4fbb" stroke-width="1.2"/>
+  <circle cx="82" cy="418" r="9.5" fill="#6b4fbb"/>
+  <text x="82" y="422" font-size="10.5" font-weight="700" text-anchor="middle" fill="#ffffff">1</text>
+  <text x="202" y="420" font-size="11.5" text-anchor="middle" fill="#10131a">Redact</text>
+  <text x="202" y="438" font-size="9.5" text-anchor="middle" fill="#6b7280">raw prompt text is never persisted</text>
+
+  <rect x="358" y="396" width="284" height="58" rx="6" fill="#f3f0fb" stroke="#6b4fbb" stroke-width="1.2"/>
+  <circle cx="380" cy="418" r="9.5" fill="#6b4fbb"/>
+  <text x="380" y="422" font-size="10.5" font-weight="700" text-anchor="middle" fill="#ffffff">2</text>
+  <text x="500" y="420" font-size="11.5" text-anchor="middle" fill="#10131a">Match &#8212; three channels, ORed</text>
+  <text x="500" y="438" font-size="9.5" text-anchor="middle" fill="#6b7280">fingerprint &#183; containment &#183; embedding</text>
+
+  <rect x="60" y="462" width="284" height="58" rx="6" fill="#f3f0fb" stroke="#6b4fbb" stroke-width="1.2"/>
+  <circle cx="82" cy="484" r="9.5" fill="#6b4fbb"/>
+  <text x="82" y="488" font-size="10.5" font-weight="700" text-anchor="middle" fill="#ffffff">3</text>
+  <text x="202" y="486" font-size="11.5" text-anchor="middle" fill="#10131a">Route &#183; delegate</text>
+  <text x="202" y="504" font-size="9.5" text-anchor="middle" fill="#6b7280">matched &#8658; specialist + brief + scope</text>
+
+  <rect x="358" y="462" width="284" height="58" rx="6" fill="#f3f0fb" stroke="#6b4fbb" stroke-width="1.2"/>
+  <circle cx="380" cy="484" r="9.5" fill="#6b4fbb"/>
+  <text x="380" y="488" font-size="10.5" font-weight="700" text-anchor="middle" fill="#ffffff">4</text>
+  <text x="500" y="486" font-size="11.5" text-anchor="middle" fill="#10131a">Budget, at admission</text>
+  <text x="500" y="504" font-size="9.5" text-anchor="middle" fill="#6b7280">over &#8658; 429 before the Run exists</text>
+
+  <text x="60" y="548" font-size="9" font-weight="700" letter-spacing="0.5" fill="#8a90a0">ON THE WAY BACK &#8212; HOW THE POLICY GETS WRITTEN</text>
+
+  <rect x="60" y="556" width="284" height="58" rx="6" fill="#f3f0fb" stroke="#6b4fbb" stroke-width="1.2"/>
+  <circle cx="82" cy="578" r="9.5" fill="#6b4fbb"/>
+  <text x="82" y="582" font-size="10.5" font-weight="700" text-anchor="middle" fill="#ffffff">5</text>
+  <text x="202" y="580" font-size="11.5" text-anchor="middle" fill="#10131a">Observe the run</text>
+  <text x="202" y="598" font-size="9.5" text-anchor="middle" fill="#6b7280">hosts reached &#183; paths written &#183; secrets used</text>
+
+  <rect x="358" y="556" width="284" height="58" rx="6" fill="#f3f0fb" stroke="#6b4fbb" stroke-width="1.2"/>
+  <circle cx="380" cy="578" r="9.5" fill="#6b4fbb"/>
+  <text x="380" y="582" font-size="10.5" font-weight="700" text-anchor="middle" fill="#ffffff">6</text>
+  <text x="500" y="580" font-size="11.5" text-anchor="middle" fill="#10131a">Cluster the wordings</text>
+  <text x="500" y="598" font-size="9.5" text-anchor="middle" fill="#6b7280">one task, many phrasings, many people</text>
+
+  <rect x="60" y="622" width="284" height="58" rx="6" fill="#f3f0fb" stroke="#6b4fbb" stroke-width="1.2"/>
+  <circle cx="82" cy="644" r="9.5" fill="#6b4fbb"/>
+  <text x="82" y="648" font-size="10.5" font-weight="700" text-anchor="middle" fill="#ffffff">7</text>
+  <text x="202" y="646" font-size="11.5" text-anchor="middle" fill="#10131a">Derive the capability scope</text>
+  <text x="202" y="664" font-size="9.5" text-anchor="middle" fill="#6b7280">hosts &#183; paths &#183; secrets &#8212; from real runs</text>
+
+  <rect x="358" y="622" width="284" height="58" rx="6" fill="#f3f0fb" stroke="#6b4fbb" stroke-width="1.2"/>
+  <circle cx="380" cy="644" r="9.5" fill="#6b4fbb"/>
+  <text x="380" y="648" font-size="10.5" font-weight="700" text-anchor="middle" fill="#ffffff">8</text>
+  <text x="500" y="646" font-size="11.5" text-anchor="middle" fill="#10131a">Promote &#183; refine</text>
+  <text x="500" y="664" font-size="9.5" text-anchor="middle" fill="#6b7280">unattended &#183; narrowing only &#183; fails closed</text>
+
+  <rect x="60" y="688" width="582" height="50" rx="6" fill="#f3f0fb" stroke="#6b4fbb" stroke-width="1.2"/>
+  <text x="351" y="710" font-size="11.5" text-anchor="middle" fill="#10131a">Persisted in the existing JsonStore &#8212; no new data layer</text>
+  <text x="351" y="727" font-size="9.5" text-anchor="middle" fill="#6b7280">observations &#183; contracts &#183; decisions &#183; denials &#183; rules &#183; spans &#183; sessions</text>
+
+  <!-- ===================== THREE SEAMS ===================== -->
+  <path d="M465 316 L465 172" fill="none" stroke="#6b4fbb" stroke-width="1.4" stroke-dasharray="2 4" marker-end="url(#aCod)"/>
+  <rect x="433" y="236" width="64" height="17" fill="#ffffff"/>
+  <text x="465" y="249" font-size="10" text-anchor="middle" fill="#6b4fbb" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">app.ts</text>
+
+  <path d="M636 316 L636 256" fill="none" stroke="#6b4fbb" stroke-width="1.4" stroke-dasharray="2 4" marker-end="url(#aCod)"/>
+  <rect x="540" y="278" width="92" height="17" fill="#ffffff"/>
+  <text x="630" y="291" font-size="10" text-anchor="end" fill="#6b4fbb" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">agent-service.ts</text>
+
+  <path d="M664 470 L792 470" fill="none" stroke="#6b4fbb" stroke-width="1.4" stroke-dasharray="2 4" marker-end="url(#aCod)"/>
+  <rect x="662" y="446" width="132" height="17" fill="#ffffff"/>
+  <text x="728" y="459" font-size="9.5" text-anchor="middle" fill="#6b4fbb" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">container-codex-runner.ts</text>
+
+  <!-- ===================== ENFORCEMENT BOUNDARY ===================== -->
+  <rect x="1030" y="330" width="572" height="272" rx="10" fill="none" stroke="#2f3f6b" stroke-width="1.6" stroke-dasharray="7 5"/>
+  <text x="1046" y="354" font-size="10" font-weight="700" letter-spacing="0.7" fill="#2f3f6b">AGENT RUNTIME &#8212; ENFORCEMENT BOUNDARY</text>
+
+  <rect x="1048" y="372" width="254" height="100" rx="6" fill="#eef2fb" stroke="#2f3f6b" stroke-width="1.4"/>
+  <text x="1175" y="398" font-size="12.5" text-anchor="middle" fill="#10131a">Disposable Docker,</text>
+  <text x="1175" y="414" font-size="12.5" text-anchor="middle" fill="#10131a">Colima, or Podman</text>
+  <text x="1175" y="434" font-size="9.5" text-anchor="middle" fill="#6b4fbb">network --internal &#183; no route off-host</text>
+  <text x="1175" y="448" font-size="9.5" text-anchor="middle" fill="#6b4fbb">workspace ro &#183; only scope paths rw</text>
+  <text x="1175" y="462" font-size="9.5" text-anchor="middle" fill="#6b4fbb">only the secrets the contract names</text>
+
+  <rect x="1360" y="372" width="224" height="100" rx="6" fill="#f3f0fb" stroke="#6b4fbb" stroke-width="1.4"/>
+  <text x="1472" y="398" font-size="12.5" text-anchor="middle" fill="#10131a">Codify Broker</text>
+  <text x="1472" y="416" font-size="9.5" text-anchor="middle" fill="#6b7280">the container&#8217;s only route out</text>
+  <text x="1472" y="434" font-size="9.5" text-anchor="middle" fill="#6b7280">CONNECT allowlist =</text>
+  <text x="1472" y="448" font-size="9.5" text-anchor="middle" fill="#6b7280">the contract&#8217;s scope.domains</text>
+  <text x="1472" y="463" font-size="9.5" text-anchor="middle" fill="#6b7280">holds the real Ark key</text>
+
+  <path d="M1302 420 L1352 420" fill="none" stroke="#111318" stroke-width="1.6" marker-end="url(#a)"/>
+
+  <rect x="1048" y="502" width="536" height="58" rx="6" fill="#fdf1f1" stroke="#b4232a" stroke-width="1.3"/>
+  <text x="1316" y="524" font-size="11.5" text-anchor="middle" fill="#b4232a">refused &#8594; DenialEvent</text>
+  <text x="1316" y="542" font-size="9.5" text-anchor="middle" fill="#b4232a">egress &#183; path &#183; budget &#183; secret &#8212; all four watched live, with Codex&#8217;s own sandbox switched off</text>
+
+  <path d="M1175 476 L1175 498" fill="none" stroke="#b4232a" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#aDeny)"/>
+  <path d="M1472 476 L1472 498" fill="none" stroke="#b4232a" stroke-width="1.3" stroke-dasharray="4 3" marker-end="url(#aDeny)"/>
+
+  <!-- AgentRunner -> container -->
+  <path d="M948 440 C992 440 1000 424 1040 424" fill="none" stroke="#111318" stroke-width="1.6" marker-end="url(#a)"/>
+  <rect x="966" y="400" width="60" height="16" fill="#ffffff"/>
+  <text x="996" y="412" font-size="10" text-anchor="middle" fill="#10131a">Local POC</text>
+
+  <!-- ===================== ARK ===================== -->
+  <rect x="1650" y="396" width="140" height="80" rx="6" fill="#eef2fb" stroke="#2f3f6b" stroke-width="1.4"/>
+  <text x="1720" y="428" font-size="12.5" text-anchor="middle" fill="#10131a">Volcengine Ark</text>
+  <text x="1720" y="446" font-size="12.5" text-anchor="middle" fill="#10131a">Responses API</text>
+  <path d="M1584 424 C1614 424 1618 432 1642 432" fill="none" stroke="#111318" stroke-width="1.6" marker-end="url(#a)"/>
+
+  <!-- ===================== ECS PROFILE (secondary) ===================== -->
+  <path d="M900 532 C900 572 848 578 826 606" fill="none" stroke="#9aa1ad" stroke-width="1.4" marker-end="url(#aMute)"/>
+  <rect x="700" y="612" width="252" height="66" rx="6" fill="#f4f5f7" stroke="#9aa1ad" stroke-width="1.3"/>
+  <text x="826" y="634" font-size="11.5" text-anchor="middle" fill="#4b5563">Codex CLI Process &#8212; ECS profile</text>
+  <text x="826" y="652" font-size="9" text-anchor="middle" fill="#b4232a">no scope enforcement on this path &#8212;</text>
+  <text x="826" y="665" font-size="9" text-anchor="middle" fill="#b4232a">CodexRunner is deliberately untouched</text>
+
+  <!-- ===================== OBSERVATION LOOP ===================== -->
+  <path d="M1180 606 L1180 812 L350 812 L350 762" fill="none" stroke="#6b4fbb" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#aCod)"/>
+  <rect x="502" y="789" width="536" height="18" fill="#ffffff"/>
+  <text x="770" y="802" font-size="10.5" text-anchor="middle" fill="#6b4fbb">what the run reached, read and wrote &#183; every span &#183; every denial &#8212; the only source the policy is written from</text>
+
+  <!-- ===================== LEGEND ===================== -->
+  <text x="40" y="868" font-size="10" fill="#6b7280">solid = one turn&#8217;s data flow &#160;&#183;&#160; dotted purple = where Codify integrates with the Starter Kit &#160;&#183;&#160; dashed red = a refusal &#160;&#183;&#160; dashed purple = the observation loop that writes the policy</text>
+</svg>

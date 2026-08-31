@@ -20,3 +20,6 @@ WorkBench/
 deploy/volcengine/.terraform/
 deploy/volcengine/*.tfstate*
 deploy/volcengine/terraform.tfvars
+
+# The organisers' challenge brief, kept locally for reference. Not ours to redistribute.
+Hackathon Track 1.txt

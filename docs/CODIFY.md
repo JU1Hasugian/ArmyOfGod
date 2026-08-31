@@ -714,7 +714,7 @@ tests. State one limitation from §11.
 ## 9. Tests
 
 `npm run check` runs typecheck, the full vitest suite, and both production
-builds. **271 tests across 33 files** (three skipped without live credentials;
+builds. **283 tests across 34 files** (three skipped without live credentials;
 a fourth, the host-process runner's shell-script stand-in, skips on Windows).
 
 | Area | What it proves |
@@ -1401,7 +1401,7 @@ the UI rather than asserted here.
 |---|---|---|
 | End-to-end middleware behavior | 40% | Routing changes **which Agent and which brief** executes a turn, on three channels that fail in different directions. Enforcement executes at container launch and at the broker, on a network the Agent cannot route around, and a promoted specialist carries its scope even when nothing matches. Budget refuses at admission before a Run exists. All verified against live Ark and real Docker (§10, `docs/SEMANTIC-ROUTING.md` §4–4b). |
 | Technical design and integration | 25% | Reuses `AgentService` and `AgentRunner`; enforcement lives in `ContainerCodexRunner` only. Ten additive record types with backfill, so an older store still loads, and a contract promoted before the semantic channel existed still matches on its fingerprints. `CapabilityScope`, `TaskBudget` and `TaskContract` are the extensible contracts. Coordination adds no execution path of its own — a session turn goes through the ordinary `sendMessage` seam, which is what makes "each participant under its own scope" true rather than aspirational. |
-| Verification and robustness | 20% | 271 tests, including a cooperation-independent network test, credential isolation, fail-closed, forged-scope, delegation fallback, the padding evasion, channel complementarity, principal binding, budget lineage, trace crash-closure, and the coordination turn claim. Redaction before storage; deterministic fallbacks for every model call; bounded retry so a rate limit cannot silently become a policy decision; per-run cleanup. |
+| Verification and robustness | 20% | 283 tests, including a cooperation-independent network test, credential isolation, fail-closed, forged-scope, delegation fallback, the padding evasion, channel complementarity, principal binding, budget lineage, trace crash-closure, and the coordination turn claim. Redaction before storage; deterministic fallbacks for every model call; bounded retry so a rate limit cannot silently become a policy decision; per-run cleanup. |
 | Demo and reproducibility | 15% | One-command startup preserved; seeded corpus makes the flow reproducible at t=0; the live-endpoint test skips cleanly without credentials so `npm run check` is green either way; limitations documented; no hidden manual setup. |
 
 ### Optional-evidence checkboxes
