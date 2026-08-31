@@ -1,8 +1,17 @@
 # Demo runbook
 
-Written so somebody who did not build this can record the whole thing. Every
-step says **who to be signed in as, what to open, what to type, what should come
-back, and what to say over it.**
+**The demo has been recorded.** [Part 0b](#part-0b--the-submitted-cut-beat-by-beat)
+is the beat-by-beat record of the submitted three-minute cut and is the
+authority on what a judge sees; [Part 7b](#part-7b--what-this-covers-against-the-brief)
+maps the brief against it.
+
+The rest of this document is the **reproduction steps** for those beats: how to
+run each one yourself, from a clean store, and what should come back. Every step
+says **who to be signed in as, what to open, what to type, what should come
+back, and what to say over it** — written so somebody who did not build this can
+re-record or verify any beat. Some Parts cover capabilities that did not fit in
+three minutes; those are marked **not in the cut** and are listed at the end of
+Part 0b.
 
 It is a recorded demo, so cuts and speed-ups are assumed. Nothing here is paced
 around how long a container turn takes.
@@ -103,10 +112,16 @@ longer prints the endpoint id, but your shell will if you let it.
 
 ---
 
-## Part 0b — The three-minute cut
+## Part 0b — The submitted cut, beat by beat
 
-This document is longer than three minutes. That is deliberate — it explains
-what each beat is and why — but **it is not a shooting order.** This is.
+**This is the record of what was actually filmed.** The timings below are the
+submitted three-minute video, and they are the authority on what a judge sees.
+
+The Parts that follow are the *reproduction steps* for those beats — how to run
+each one yourself from a clean store. Several of them cover capabilities the
+platform has and this cut had no room for. Those are marked **not in the cut**
+rather than deleted: they are reproducible, `bench/demo-verify.mjs` exercises
+them, and Part 9 records which have been run.
 
 ### The edit that makes it fit
 
@@ -128,20 +143,44 @@ That turns 65 seconds of watching people type into about 30 of seeing the
 contrast, and it is what buys room for the compound split and the refinement
 loop.
 
-| time | beat | why it survives |
+| time | beat | what it establishes |
 |---|---|---|
-| **0:00–0:12** | Cold open on the postmortem contract, then the Agent: **READY**, controls, workspace | The thesis in one sentence, plus §1.8 #1 |
-| **0:12–0:28** | Five windows at once: five wordings, five different documents. Then *"and every one ran with everything"* | The problem, and the line that makes it a security story |
-| **0:28–0:52** | Governance: three contracts, three scopes — `github.com` / **no egress** / `registry.npmjs.org`, every one `secrets: []` | **"Nobody wrote this policy."** The 40% category |
-| **0:52–1:08** | Three windows at once: three wordings → **one structure**, beside the five | §1.8 #2, #3 — real turns, real files |
-| **1:08–1:26** | Refinement: two people asked for bigger headings, the rule is on the contract, **v1 → v2, no operator** | The loop improving itself — and the guard that let it |
-| **1:26–1:54** | Denials: `ab.chatgpt.com` ×3 unrequested, then `finance/` untouched after a refused write | §1.8 #5, and the most convincing evidence here |
-| **1:54–2:22** | Compound split: one request, two specialists, **neither holding the union** | The best architecture story; the only beat that cannot be said in a sentence |
-| **2:22–2:48** | Revoke `github.com` → next run refused → **escalate from the recorded denial** → restored, v3 | §1.8 #6, revocability and recovery in one |
-| **2:48–3:00** | `npm run check` green, one limitation said aloud | Closes on measurement, not a claim |
+| **0:08–0:23** | Five people in a workplace prompt a very similar task — with no standard between them | The problem, in the only terms a workplace recognises |
+| **0:23–0:28** | Five different results | Why the absence of a standard costs something |
+| **0:28–0:38** | Codify watches those runs, detects the repetition, and promotes a specialist for the task with a brief distilled from the prompts people actually sent | The loop, stated once |
+| **0:38–0:52** | The specialists already promoted, each with the policy it runs under: the dependency audit reaches `registry.npmjs.org` and nothing else, and reads and writes only named directories; the last specialist has **no internet at all** | **"Nobody wrote this policy."** The 40% category |
+| **0:54–1:04** | Prompting again, now the specialists exist | §1.8 #2 — a real task through the Playground |
+| **1:06–1:09** | The request is routed to the matching specialist | The caller did not pick it and did not need to know it existed |
+| **1:11–1:14** | Every result shares one structure, heading titles included | §1.8 #3 — real files, and the adoption argument |
+| **1:15–1:24** | A follow-up — *make the boldings bolder and bigger* — and its result | The specialist takes correction |
+| **1:24–1:28** | One person asking does **not** move the standard | The guard, shown before the thing it guards |
+| **1:28–1:34** | A second person asks for the same thing | |
+| **1:34–1:40** | The specialist becomes **v2**, brief rewritten, because a majority asked for the same change | The loop improving itself, versioned |
+| **1:40–1:47** | Setting a token limit on a particular specialist | §1.10 optional — a budget control |
+| **1:47–2:03** | Asking the agent to write a file outside its usual location | Sets up the strongest evidence here |
+| **2:03–2:21** | Codex's own telemetry call to ChatGPT blocked — nothing asked it to cooperate, and the host was never in the policy — then the writes into `finance/` blocked | §1.8 #5, and the most convincing thirty seconds in the cut |
+| **2:21–2:28** | A prompt that needs two tasks | |
+| **2:29–2:39** | Codify splits the request and delegates each half to the specialist that owns it | Neither participant holds the union |
+| **2:40–2:49** | The trace of what happened inside each execution | §1.10 optional — correlated per-Run evidence |
+| **2:49–3:00** | The test suite | Closes on measurement, not a claim |
 
-**That is full.** Nine beats at twenty seconds average. Nothing else fits, and
-adding a tenth makes all nine worse.
+### What the cut does not contain
+
+Said plainly, because Part 7b maps the brief against it and two rows moved:
+
+- **Revoke a permission, watch the next run lose it, restore it (Part 6b).** The
+  planned cut ended on revocability; this one ends on the tests. Nothing in
+  §1.8 requires it — #5 is satisfied by the denials at 2:03–2:21, and #6 by the
+  v2 versioning, the token limit and the trace — but the *optional* evidence row
+  that reads "scoped **or revocable**" is now carried by "scoped" alone.
+- **The 403 and the 429 as refusals.** The budget appears at 1:40–1:47 as a limit
+  being set, not as a request being refused at admission. Both still run under
+  `bench/demo-verify.mjs`.
+- **The abuse case (Part 5)** and the five-against-three measurement read aloud
+  (Part 3.3).
+
+All four are reproducible from the Parts below, and Part 9 says which have been
+run against the live path.
 
 ### Set these up before you record
 
@@ -883,14 +922,17 @@ reviewer the rest of the numbers were arrived at the same way.
 Every numbered requirement in §1.8, and every checkbox in §1.10, with where it
 happens. If a beat is cut for time, this is the table that says what was lost.
 
-| §1.8 — required live demo | where |
+Timings are the submitted cut (Part 0b). Where a requirement is carried by
+something other than the beat originally planned for it, the table says so.
+
+| §1.8 — required live demo | where in the cut |
 |---|---|
-| 1. Create or select an Agent from the frontend, show its lifecycle state | Shot 1.2 — the card, the **READY** badge, Settings / Stop / Delete |
-| 2. Invoke the Agent through the Playground with a real task | Shots 1.3 and Part 3 — eight real Codex turns |
-| 3. At least one real model, file, tool, sandbox or data action | Part 3 — the artefacts, read out of the workspace viewer |
-| 4. The middleware behaviour and the evidence it produces | Part 2 (contracts), Part 4 (denials), Part 7 (trace) |
-| 5. An appropriate failure, denial, degraded, abuse or recovery case | Part 4 — all four denial kinds; Part 5 — the abuse case; Part 6b — recovery |
-| 6. The platform remains understandable and controllable afterward | Part 6b — revoked, refused, restored, three readable versions |
+| 1. Create or select an Agent from the frontend, show its lifecycle state | **Thinnest row — check the frame before submitting.** 0:38–0:52 shows the promoted specialists and the policy each runs under; if that frame does not also show a lifecycle control, the requirement rests on the Playground at 0:54. Shot 1.2 is the beat that was written for this |
+| 2. Invoke the Agent through the Playground with a real task | 0:54–1:04, and again at 1:15–1:24 |
+| 3. At least one real model, file, tool, sandbox or data action | 1:11–1:14 — the documents themselves, one structure across them; 1:47–2:03 — a real write attempt |
+| 4. The middleware behaviour and the evidence it produces | 0:38–0:52 (contracts), 2:03–2:21 (denials), 2:40–2:49 (trace) |
+| 5. An appropriate failure, denial, degraded, abuse or recovery case | 2:03–2:21 — **two** denial kinds: the unrequested egress to ChatGPT telemetry, and the refused writes into `finance/` |
+| 6. The platform remains understandable and controllable afterward | 1:34–1:40 (v2, the brief rewritten and versioned), 1:40–1:47 (token limit set), 2:40–2:49 (the trace). *Not* Part 6b, which is not in this cut |
 
 | §1.10 — acceptance | where |
 |---|---|
@@ -898,15 +940,15 @@ happens. If a beat is cut for time, this is the table that says what was lost.
 | One or more meaningful middleware capabilities | Parts 2, 3, 3b, 4, 6 |
 | Executes in a backend, Runtime, data or infrastructure path — not only the UI | Part 4 — refusals happen at the broker and in the kernel, and 4.1 is refused on the route before the body is validated |
 | Documentation sufficient to understand and reproduce | `CODIFY.md`, this runbook, `bench/demo-verify.mjs` |
-| `npm run check` passes | Part 7 |
+| `npm run check` passes | 2:49–3:00 |
 | No secret in source, history, logs, traces, screenshots or demo output | Part 0.6 — and the runtime card no longer prints the endpoint id |
 
 | §1.10 — optional evidence | where |
 |---|---|
-| A delegated permission scoped **or revocable**, enforced outside the UI, demonstrated | Part 2 (scoped), Part 6b (revoked and restored), Part 4 (enforced at the broker) |
-| An end-to-end Run producing a correlated trace with model, tool, sandbox, policy or infrastructure events | Part 7 — one `traceId`, ~24 spans across `ORCHESTRATION`, `POLICY_DECISION`, `SANDBOX_EXECUTION`, `MODEL_CALL`, `EGRESS` |
-| A defined threat blocked or contained, the asset unchanged, **cleanup or recovery demonstrated** | Part 4.3 — `finance/` unchanged and the write redirected into scope; Part 6b — recovery |
-| A team-defined lifecycle, reliability, memory, budget, provider or coordination capability | Part 3b (refinement), Part 4.2 (budget), Part 6 (coordination) |
+| A delegated permission scoped **or revocable**, enforced outside the UI, demonstrated | **Scoped**, at 0:38–0:52 — `registry.npmjs.org` only, named directories only, one specialist with no egress at all; enforced at the broker and in the kernel at 2:03–2:21. Revocation is Part 6b and is *not* in this cut |
+| An end-to-end Run producing a correlated trace with model, tool, sandbox, policy or infrastructure events | 2:40–2:49 — one `traceId`, ~24 spans across `ORCHESTRATION`, `POLICY_DECISION`, `SANDBOX_EXECUTION`, `MODEL_CALL`, `EGRESS` |
+| A defined threat blocked or contained, the asset unchanged, **cleanup or recovery demonstrated** | 1:47–2:21 — the write is refused and `finance/` is unchanged. The *recovery* half is Part 6b and is not in this cut |
+| A team-defined lifecycle, reliability, memory, budget, provider or coordination capability | 1:15–1:40 (refinement to v2), 1:40–1:47 (budget), 2:21–2:39 (coordination — the compound split) |
 
 ---
 
@@ -959,26 +1001,30 @@ happens. If a beat is cut for time, this is the table that says what was lost.
 ## Part 9 — What has actually been filmed, and what hasn't
 
 Verified on the container path with real Docker, real Codex, real Ark, and
-Codex's own sandbox off:
+Codex's own sandbox off. **"Seen" means the behaviour has been observed
+happening — it is not the same as being in the submitted cut.** Part 0b is the
+list of what is in the cut; rows marked *not in the cut* are reproducible and
+were verified, but a judge will not see them on video.
 
-| beat | seen |
-|---|---|
-| Promotion from a completed run — 3 contracts, 3 different scopes, all `secrets: []` | ✅ |
-| `SECRET GITHUB_TOKEN blocked` — the auto-grant clamp | ✅ |
-| `routed` / `brokerMode: enforce`, matched on containment 1.000 | ✅ |
-| `EGRESS ab.chatgpt.com blocked` ×3, unrequested | ✅ |
-| Compound split across two specialists, in parallel, neither holding the union | ✅ |
-| Trace — 24 spans | ✅ |
-| Denials table populated | ✅ |
-| Budget panel with real spend | ✅ |
-| **3.2 five-against-three** | ✅ run 2026-08-27: 5 ad-hoc → **5 distinct structures**, 3 governed → **1** |
-| Every prompt in Parts 1, 3, 4.3 and 6 | ✅ probed against the live router before being written here |
-| The workspace viewer, per-principal | ✅ one principal's file absent from another's listing |
-| The split banner across two specialists | ✅ postmortem (*no egress*) + release notes (`github.com`), in parallel |
-| **4.1 the 403** | ✅ `bench/demo-verify.mjs`, clean store |
-| **4.2 the 429** | ✅ `bench/demo-verify.mjs`, clean store |
-| **4.3 the EROFS** | ✅ `finance/` unchanged; the refused write is redirected into the path the task *is* permitted |
-| **Part 3b, the refinement loop** | ✅ a rule from two people applied with no operator, and the guard's reasoning recorded |
+| beat | seen | in the cut |
+|---|---|---|
+| Promotion from a completed run — 3 contracts, 3 different scopes, all `secrets: []` | ✅ | 0:28–0:52 |
+| `SECRET GITHUB_TOKEN blocked` — the auto-grant clamp | ✅ | — |
+| `routed` / `brokerMode: enforce`, matched on containment 1.000 | ✅ | 1:06–1:09 |
+| `EGRESS ab.chatgpt.com blocked` ×3, unrequested | ✅ | 2:03–2:21 |
+| Compound split across two specialists, in parallel, neither holding the union | ✅ | 2:21–2:39 |
+| Trace — 24 spans | ✅ | 2:40–2:49 |
+| Denials table populated | ✅ | 2:03–2:21 |
+| Budget panel with real spend | ✅ | 1:40–1:47 |
+| **3.2 five-against-three** | ✅ run 2026-08-27: 5 ad-hoc → **5 distinct structures**, 3 governed → **1** | 0:08–0:28 (shown, not read aloud) |
+| Every prompt in Parts 1, 3, 4.3 and 6 | ✅ probed against the live router before being written here | — |
+| The workspace viewer, per-principal | ✅ one principal's file absent from another's listing | — |
+| The split banner across two specialists | ✅ postmortem (*no egress*) + release notes (`github.com`), in parallel | — |
+| **4.1 the 403** | ✅ `bench/demo-verify.mjs`, clean store | **not in the cut** |
+| **4.2 the 429** | ✅ `bench/demo-verify.mjs`, clean store | **not in the cut** |
+| **4.3 the EROFS** | ✅ `finance/` unchanged; the refused write is redirected into the path the task *is* permitted | 2:03–2:21 |
+| **Part 3b, the refinement loop** | ✅ a rule from two people applied with no operator, and the guard's reasoning recorded | 1:15–1:40 |
+| **Part 6b, revoke → refuse → restore** | see Part 6b for the steps | **not in the cut** |
 
 **4.1, 4.2 and Part 3b are now driven by `bench/demo-verify.mjs`**, which runs
 every beat above from a wiped store. Run it before you record:
